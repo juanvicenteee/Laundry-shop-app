@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "Laundry Go",
+    "slug": "bubbly-fi",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "laundrygo",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.laundrygo.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Laundry Go uses your location to find nearby laundry shops and estimate pickup or delivery ETAs."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F7F6F2"
+      },
+      "package": "com.laundrygo.app",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Laundry Go uses your location only while booking or tracking a laundry pickup."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F7F6F2"
+        }
+      ]
+    ],
+    "extra": {
+      "apiBaseUrl": "https://api.example.com",
+      "eas": {
+        "projectId": "478788c4-406a-47a3-abbb-bb2aaff2b269"
+      }
+    },
+    "owner": "bubbly-fi"
+  }
+}

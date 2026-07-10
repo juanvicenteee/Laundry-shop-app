@@ -8,7 +8,7 @@ export type LaundryType = {
   category: string;
 };
 
-export type DeliveryOptionId = "none" | "mplace" | "cubao" | "outsideCubao";
+export type DeliveryOptionId = "none" | "mplace" | "portovita" | "manhattan" | "cubao" | "outsideCubao";
 
 export type DeliveryOption = {
   id: DeliveryOptionId;

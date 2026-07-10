@@ -22,7 +22,9 @@ export const defaultLaundryType: LaundryType = laundryTypes[0]!;
 export const deliveryOptions: DeliveryOption[] = [
   { id: "none", label: "Drop off at counter", fee: 0 },
   { id: "mplace", label: "Delivery - MPlace Towers", fee: 30 },
-  { id: "cubao", label: "Delivery - Cubao area", fee: 60 },
+  { id: "portovita", label: "Delivery - Portovita Towers", fee: 30 },
+  { id: "manhattan", label: "Delivery - Manhattan Residence", fee: 60 },
+  { id: "cubao", label: "Delivery - Other Cubao area", fee: 60 },
   { id: "outsideCubao", label: "Delivery - Outside Cubao", fee: 120 }
 ];
 

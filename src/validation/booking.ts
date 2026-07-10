@@ -4,7 +4,7 @@ export const bookingSchema = z
   .object({
     laundryType: z.enum(["regular", "blanket", "comforter", "sheets"]),
     quantity: z.number().min(1).max(30),
-    delivery: z.enum(["none", "cubao", "outsideCubao"]),
+    delivery: z.enum(["none", "mplace", "cubao", "outsideCubao"]),
     address: z.string().trim().max(180, "Address is too long."),
     pickupWindow: z.string().min(1, "Choose a drop-off or pickup time."),
     paymentMethod: z.enum(["Cash", "GCash", "Maya", "Bank Transfer"]),

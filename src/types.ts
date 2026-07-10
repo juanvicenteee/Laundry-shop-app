@@ -8,7 +8,7 @@ export type LaundryType = {
   category: string;
 };
 
-export type DeliveryOptionId = "none" | "oneWay" | "roundTrip";
+export type DeliveryOptionId = "none" | "cubao" | "outsideCubao";
 
 export type DeliveryOption = {
   id: DeliveryOptionId;

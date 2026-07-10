@@ -21,8 +21,8 @@ export const defaultLaundryType: LaundryType = laundryTypes[0]!;
 
 export const deliveryOptions: DeliveryOption[] = [
   { id: "none", label: "Drop off at counter", fee: 0 },
-  { id: "oneWay", label: "One-way delivery", fee: 80 },
-  { id: "roundTrip", label: "Round trip pickup & delivery (Cubao area)", fee: 60 }
+  { id: "cubao", label: "Delivery - Cubao area", fee: 60 },
+  { id: "outsideCubao", label: "Delivery - Outside Cubao", fee: 120 }
 ];
 
 export const defaultDeliveryOption: DeliveryOption = deliveryOptions[0]!;
@@ -58,7 +58,7 @@ export const activeOrders: Order[] = [
     status: "Ready",
     paymentStatus: "Paid",
     paymentMethod: "GCash",
-    delivery: 80,
-    amount: 560
+    delivery: 60,
+    amount: 540
   }
 ];

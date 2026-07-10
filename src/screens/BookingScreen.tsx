@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { Chip } from "../components/Chip";
@@ -14,10 +14,12 @@ import {
   laundryTypes,
   paymentMethods,
   pricePerLoad,
+  shopInfo,
   timeWindows
 } from "../data/demo";
 import { colors, shadows, spacing } from "../theme";
 import type { DeliveryOptionId, LaundryTypeId, PaymentMethod } from "../types";
+import { buildOrderMessage, generateClaimPin, generateOrderReference } from "../utils/orderNotify";
 import { bookingSchema } from "../validation/booking";
 
 export function BookingScreen() {
@@ -37,7 +39,7 @@ export function BookingScreen() {
 
   const estimate = useMemo(() => loads * pricePerLoad + selectedDelivery.fee, [loads, selectedDelivery]);
 
-  function submitBooking() {
+  async function submitBooking() {
     const parsed = bookingSchema.safeParse({
       laundryType,
       quantity,
@@ -53,7 +55,38 @@ export function BookingScreen() {
       return;
     }
 
-    Alert.alert("Booking ready", "This demo booking passed validation and is ready for the API.");
+    const reference = generateOrderReference();
+    const claimPin = generateClaimPin();
+    const message = buildOrderMessage({
+      reference,
+      claimPin,
+      laundryType: selectedType,
+      quantity,
+      loads,
+      pickupWindow,
+      delivery: selectedDelivery,
+      address,
+      paymentMethod,
+      notes,
+      total: estimate
+    });
+
+    const separator = Platform.OS === "ios" ? "&" : "?";
+    const smsUrl = `sms:${shopInfo.phone}${separator}body=${encodeURIComponent(message)}`;
+
+    const canOpenSms = await Linking.canOpenURL(smsUrl);
+    if (canOpenSms) {
+      await Linking.openURL(smsUrl);
+      Alert.alert(
+        `Reference ${reference}`,
+        `Send the text to notify Bubbly-fi. Keep your claim PIN ${claimPin} - show it at pickup to verify your order.`
+      );
+    } else {
+      Alert.alert(
+        `Reference ${reference}`,
+        `Text this order to ${shopInfo.phone} to confirm, and keep PIN ${claimPin} for pickup.\n\n${message}`
+      );
+    }
   }
 
   async function useCurrentLocation() {

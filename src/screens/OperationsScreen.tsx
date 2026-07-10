@@ -3,51 +3,56 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { SectionTitle } from "../components/SectionTitle";
+import { activeOrders, laundryTypes } from "../data/demo";
 import { colors, shadows, spacing } from "../theme";
+import type { OrderStatus } from "../types";
 
-const jobs = [
-  { id: "P-812", type: "Pickup", customer: "J. Santos", area: "BGC", eta: "8 min" },
-  { id: "D-447", type: "Delivery", customer: "M. Lim", area: "Makati", eta: "18 min" },
-  { id: "Q-129", type: "Shop check", customer: "A. Reyes", area: "WashMate", eta: "Due now" }
-];
+const nextStatus: Record<OrderStatus, OrderStatus | null> = {
+  Received: "Washing",
+  Washing: "Drying",
+  Drying: "Ready",
+  Ready: "Claimed",
+  Claimed: null
+};
 
 export function OperationsScreen() {
   return (
     <AppScreen>
       <Text style={styles.heading}>Work hub</Text>
-      <Text style={styles.subheading}>Accept pickups, hand off bags, and update laundry status.</Text>
+      <Text style={styles.subheading}>Move orders through wash, dry, and claim.</Text>
 
-      <View style={styles.modeRow}>
-        <Pressable style={[styles.mode, styles.modeActive]}>
-          <Ionicons name="bicycle" size={20} color={colors.primary} />
-          <Text style={styles.modeActiveText}>Rider</Text>
-        </Pressable>
-        <Pressable style={styles.mode}>
-          <Ionicons name="storefront" size={20} color={colors.muted} />
-          <Text style={styles.modeText}>Shop</Text>
-        </Pressable>
-      </View>
-
-      <SectionTitle title="Available jobs" />
-      {jobs.map((job) => (
-        <View key={job.id} style={[styles.jobCard, shadows.card]}>
-          <View style={styles.jobIcon}>
-            <Ionicons name={job.type === "Delivery" ? "cube" : "bag-handle"} size={22} color={colors.primary} />
+      <SectionTitle title="Active orders" />
+      {activeOrders.map((order) => {
+        const type = laundryTypes.find((item) => item.id === order.laundryType);
+        const next = nextStatus[order.status];
+        return (
+          <View key={order.id} style={[styles.jobCard, shadows.card]}>
+            <View style={styles.jobIcon}>
+              <Ionicons name="shirt" size={22} color={colors.primary} />
+            </View>
+            <View style={styles.jobBody}>
+              <Text style={styles.jobType}>
+                {order.id} · {type?.label}
+              </Text>
+              <Text style={styles.jobMeta}>
+                {order.status} · {order.loads} load{order.loads === 1 ? "" : "s"}
+              </Text>
+            </View>
+            <View style={styles.jobSide}>
+              <Text style={styles.jobEta}>₱{order.amount}</Text>
+              {next ? (
+                <Pressable style={styles.acceptButton}>
+                  <Text style={styles.acceptText}>Mark {next}</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.doneBadge}>
+                  <Text style={styles.doneText}>Done</Text>
+                </View>
+              )}
+            </View>
           </View>
-          <View style={styles.jobBody}>
-            <Text style={styles.jobType}>{job.type}</Text>
-            <Text style={styles.jobMeta}>
-              {job.customer} · {job.area}
-            </Text>
-          </View>
-          <View style={styles.jobSide}>
-            <Text style={styles.jobEta}>{job.eta}</Text>
-            <Pressable style={styles.acceptButton}>
-              <Text style={styles.acceptText}>Accept</Text>
-            </Pressable>
-          </View>
-        </View>
-      ))}
+        );
+      })}
 
       <SectionTitle title="Controls" />
       <View style={styles.controlGrid}>
@@ -60,8 +65,8 @@ export function OperationsScreen() {
           <Text style={styles.controlTitle}>Handoff PIN</Text>
         </View>
         <View style={styles.control}>
-          <Ionicons name="location" size={24} color={colors.accent} />
-          <Text style={styles.controlTitle}>Live GPS</Text>
+          <Ionicons name="cube" size={24} color={colors.accent} />
+          <Text style={styles.controlTitle}>Inventory</Text>
         </View>
         <View style={styles.control}>
           <Ionicons name="warning" size={24} color={colors.danger} />
@@ -86,41 +91,12 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: spacing.sm
   },
-  modeRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginTop: spacing.xl
-  },
-  mode: {
-    flex: 1,
-    height: 48,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.surface
-  },
-  modeActive: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary
-  },
-  modeText: {
-    color: colors.muted,
-    fontWeight: "900"
-  },
-  modeActiveText: {
-    color: colors.primary,
-    fontWeight: "900"
-  },
   jobCard: {
     minHeight: 92,
     borderRadius: 8,
     padding: spacing.md,
     backgroundColor: colors.surface,
-    marginBottom: spacing.md,
+    marginTop: spacing.md,
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md
@@ -154,8 +130,9 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   acceptButton: {
-    minWidth: 72,
+    minWidth: 96,
     minHeight: 34,
+    paddingHorizontal: spacing.sm,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
@@ -163,6 +140,18 @@ const styles = StyleSheet.create({
   },
   acceptText: {
     color: "#FFFFFF",
+    fontWeight: "900"
+  },
+  doneBadge: {
+    minWidth: 72,
+    minHeight: 34,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.line
+  },
+  doneText: {
+    color: colors.muted,
     fontWeight: "900"
   },
   controlGrid: {

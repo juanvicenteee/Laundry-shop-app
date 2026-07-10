@@ -1,11 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { SectionTitle } from "../components/SectionTitle";
-import { ShopCard } from "../components/ShopCard";
-import { activeOrders, shops } from "../data/demo";
+import { activeOrders, laundryTypes, pricePerLoad, shopInfo } from "../data/demo";
 import { colors, shadows, spacing } from "../theme";
 
 export function HomeScreen() {
@@ -15,21 +14,21 @@ export function HomeScreen() {
     <AppScreen>
       <View style={styles.topRow}>
         <View>
-          <Text style={styles.eyebrow}>Laundry Go</Text>
-          <Text style={styles.heading}>Clean clothes, picked up fast</Text>
+          <Text style={styles.eyebrow}>{shopInfo.name}</Text>
+          <Text style={styles.heading}>Fresh laundry, done right</Text>
         </View>
         <Pressable style={styles.iconButton} accessibilityLabel="Open notifications">
           <Ionicons name="notifications" size={20} color={colors.ink} />
         </Pressable>
       </View>
 
-      <LinearGradient colors={["#0D8F68", "#145E4C"]} style={styles.hero}>
+      <LinearGradient colors={[colors.primary, colors.primaryDark]} style={styles.hero}>
         <View style={styles.heroCopy}>
-          <Text style={styles.heroTitle}>Pickup in 14 minutes</Text>
-          <Text style={styles.heroText}>Book nearby laundry shops with live rider tracking.</Text>
+          <Text style={styles.heroTitle}>₱{pricePerLoad} per load</Text>
+          <Text style={styles.heroText}>Drop off at the counter, or add delivery at checkout.</Text>
         </View>
         <View style={styles.heroIcon}>
-          <Ionicons name="bicycle" size={48} color="#FFFFFF" />
+          <Ionicons name="shirt" size={48} color="#FFFFFF" />
         </View>
       </LinearGradient>
 
@@ -41,21 +40,44 @@ export function HomeScreen() {
               <Text style={styles.orderId}>{activeOrder.id}</Text>
               <Text style={styles.orderStatus}>{activeOrder.status}</Text>
             </View>
-            <Text style={styles.orderText}>{activeOrder.items}</Text>
-            <View style={styles.progressTrack}>
-              <View style={[styles.progressFill, { width: `${activeOrder.progress * 100}%` }]} />
-            </View>
+            <Text style={styles.orderText}>
+              {laundryTypes.find((type) => type.id === activeOrder.laundryType)?.label}
+            </Text>
             <View style={styles.orderFooter}>
-              <Text style={styles.orderText}>{activeOrder.shopName}</Text>
-              <Text style={styles.orderEta}>{activeOrder.eta}</Text>
+              <Text style={styles.orderText}>
+                {activeOrder.loads} load{activeOrder.loads === 1 ? "" : "s"}
+              </Text>
+              <Text style={styles.orderEta}>₱{activeOrder.amount}</Text>
             </View>
           </View>
         </>
       ) : null}
 
-      <SectionTitle title="Nearby shops" action="See all" />
-      {shops.map((shop) => (
-        <ShopCard key={shop.id} shop={shop} />
+      <SectionTitle title="Shop info" />
+      <View style={[styles.infoCard, shadows.card]}>
+        <View style={styles.infoRow}>
+          <Ionicons name="location" size={18} color={colors.primary} />
+          <Text style={styles.infoText}>{shopInfo.address}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Ionicons name="time" size={18} color={colors.primary} />
+          <Text style={styles.infoText}>{shopInfo.hours}</Text>
+        </View>
+        <Pressable style={styles.infoRow} onPress={() => Linking.openURL(`tel:${shopInfo.phone}`)}>
+          <Ionicons name="call" size={18} color={colors.primary} />
+          <Text style={[styles.infoText, styles.link]}>{shopInfo.phone}</Text>
+        </Pressable>
+      </View>
+
+      <SectionTitle title="Services" />
+      {laundryTypes.map((type) => (
+        <View key={type.id} style={[styles.serviceCard, shadows.card]}>
+          <Text style={styles.serviceName}>{type.label}</Text>
+          <Text style={styles.serviceMeta}>
+            up to {type.capacity}
+            {type.unit}/load · ₱{pricePerLoad}
+          </Text>
+        </View>
       ))}
     </AppScreen>
   );
@@ -146,17 +168,6 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginTop: spacing.sm
   },
-  progressTrack: {
-    height: 8,
-    borderRadius: 8,
-    overflow: "hidden",
-    backgroundColor: colors.line,
-    marginTop: spacing.lg
-  },
-  progressFill: {
-    height: "100%",
-    backgroundColor: colors.primary
-  },
   orderFooter: {
     marginTop: spacing.sm,
     flexDirection: "row",
@@ -167,5 +178,39 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontWeight: "900",
     marginTop: spacing.sm
+  },
+  infoCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: spacing.lg,
+    gap: spacing.md
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm
+  },
+  infoText: {
+    color: colors.ink,
+    fontWeight: "700",
+    flexShrink: 1
+  },
+  link: {
+    color: colors.primary
+  },
+  serviceCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: spacing.lg,
+    marginBottom: spacing.md
+  },
+  serviceName: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  serviceMeta: {
+    color: colors.muted,
+    marginTop: spacing.xs
   }
 });

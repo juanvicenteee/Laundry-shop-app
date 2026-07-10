@@ -10,14 +10,12 @@ import { BookingScreen } from "./src/screens/BookingScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { OrdersScreen } from "./src/screens/OrdersScreen";
 import { OperationsScreen } from "./src/screens/OperationsScreen";
-import { WalletScreen } from "./src/screens/WalletScreen";
 import { colors } from "./src/theme";
 
 export type RootTabParamList = {
   Home: undefined;
   Book: undefined;
   Orders: undefined;
-  Wallet: undefined;
   Ops: undefined;
 };
 
@@ -27,8 +25,7 @@ const icons: Record<keyof RootTabParamList, keyof typeof Ionicons.glyphMap> = {
   Home: "home",
   Book: "basket",
   Orders: "receipt",
-  Wallet: "wallet",
-  Ops: "bicycle"
+  Ops: "shirt"
 };
 
 function RootNavigator() {
@@ -54,7 +51,6 @@ function RootNavigator() {
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Book" component={BookingScreen} />
       <Tab.Screen name="Orders" component={OrdersScreen} />
-      <Tab.Screen name="Wallet" component={WalletScreen} />
       <Tab.Screen name="Ops" component={OperationsScreen} options={{ title: "Work" }} />
     </Tab.Navigator>
   );

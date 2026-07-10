@@ -1,28 +1,28 @@
 {
   "expo": {
-    "name": "Laundry Go",
+    "name": "Bubbly-fi Laundry",
     "slug": "bubbly-fi",
     "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "laundrygo",
+    "scheme": "bubblyfi",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.laundrygo.app",
+      "bundleIdentifier": "com.bubblyfi.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Laundry Go uses your location to find nearby laundry shops and estimate pickup or delivery ETAs."
+        "NSLocationWhenInUseUsageDescription": "Bubbly-fi uses your location to estimate delivery ETA when you choose delivery instead of counter drop-off."
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#F7F6F2"
+        "backgroundColor": "#F7FAFC"
       },
-      "package": "com.laundrygo.app",
+      "package": "com.bubblyfi.app",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
@@ -33,7 +33,7 @@
       [
         "expo-location",
         {
-          "locationAlwaysAndWhenInUsePermission": "Laundry Go uses your location only while booking or tracking a laundry pickup."
+          "locationAlwaysAndWhenInUsePermission": "Bubbly-fi uses your location only while booking or tracking delivery."
         }
       ],
       [
@@ -41,7 +41,7 @@
         {
           "image": "./assets/splash.png",
           "resizeMode": "contain",
-          "backgroundColor": "#F7F6F2"
+          "backgroundColor": "#F7FAFC"
         }
       ]
     ],

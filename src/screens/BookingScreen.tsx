@@ -5,32 +5,44 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { AppScreen } from "../components/AppScreen";
 import { Chip } from "../components/Chip";
 import { SectionTitle } from "../components/SectionTitle";
-import { serviceOptions, shops, timeWindows } from "../data/demo";
+import {
+  defaultDeliveryOption,
+  defaultLaundryType,
+  defaultPaymentMethod,
+  deliveryOptions,
+  laundryTypes,
+  paymentMethods,
+  pricePerLoad,
+  timeWindows
+} from "../data/demo";
 import { colors, shadows, spacing } from "../theme";
+import type { DeliveryOptionId, LaundryTypeId, PaymentMethod } from "../types";
 import { bookingSchema } from "../validation/booking";
 
 export function BookingScreen() {
-  const [service, setService] = useState(serviceOptions[0] ?? "");
+  const [laundryType, setLaundryType] = useState<LaundryTypeId>(defaultLaundryType.id);
+  const [quantity, setQuantity] = useState(defaultLaundryType.capacity);
+  const [delivery, setDelivery] = useState<DeliveryOptionId>("none");
   const [pickupWindow, setPickupWindow] = useState(timeWindows[0] ?? "");
-  const [estimatedKg, setEstimatedKg] = useState(5);
-  const [address, setAddress] = useState("Bonifacio High Street, Taguig");
+  const [address, setAddress] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(defaultPaymentMethod);
   const [notes, setNotes] = useState("");
-  const selectedShop = shops.find((shop) => shop.open) ?? shops[0];
 
-  const estimate = useMemo(() => {
-    const base = selectedShop?.basePrice ?? 0;
-    const weightFee = Math.max(0, estimatedKg - 3) * 28;
-    const deliveryFee = 49;
-    return base + weightFee + deliveryFee;
-  }, [estimatedKg, selectedShop?.basePrice]);
+  const selectedType = laundryTypes.find((type) => type.id === laundryType) ?? defaultLaundryType;
+  const selectedDelivery = deliveryOptions.find((option) => option.id === delivery) ?? defaultDeliveryOption;
+  const loads = Math.max(1, Math.ceil(quantity / selectedType.capacity));
+
+  const estimate = useMemo(() => loads * pricePerLoad + selectedDelivery.fee, [loads, selectedDelivery]);
 
   function submitBooking() {
     const parsed = bookingSchema.safeParse({
-      service,
-      pickupWindow,
+      laundryType,
+      quantity,
+      delivery,
       address,
-      notes,
-      estimatedKg
+      pickupWindow,
+      paymentMethod,
+      notes
     });
 
     if (!parsed.success) {
@@ -43,22 +55,25 @@ export function BookingScreen() {
 
   return (
     <AppScreen>
-      <Text style={styles.heading}>Book laundry pickup</Text>
-      <Text style={styles.subheading}>Choose the service, pickup time, and shop before confirming.</Text>
+      <Text style={styles.heading}>Book laundry</Text>
+      <Text style={styles.subheading}>Choose a laundry type, time, and delivery option.</Text>
 
-      <SectionTitle title="Service" />
+      <SectionTitle title="Laundry type" />
       <View style={styles.wrap}>
-        {serviceOptions.map((option) => (
+        {laundryTypes.map((type) => (
           <Chip
-            key={option}
-            label={option}
-            selected={option === service}
-            onPress={() => setService(option)}
+            key={type.id}
+            label={type.label}
+            selected={type.id === laundryType}
+            onPress={() => {
+              setLaundryType(type.id);
+              setQuantity(type.capacity);
+            }}
           />
         ))}
       </View>
 
-      <SectionTitle title="Pickup time" />
+      <SectionTitle title="Drop-off / pickup time" />
       <View style={styles.wrap}>
         {timeWindows.map((window) => (
           <Chip
@@ -70,25 +85,48 @@ export function BookingScreen() {
         ))}
       </View>
 
-      <SectionTitle title="Pickup details" />
+      <SectionTitle title="Delivery" />
+      <View style={styles.wrap}>
+        {deliveryOptions.map((option) => (
+          <Chip
+            key={option.id}
+            label={option.fee ? `${option.label} (₱${option.fee})` : option.label}
+            selected={option.id === delivery}
+            onPress={() => setDelivery(option.id)}
+          />
+        ))}
+      </View>
+
+      {delivery !== "none" ? (
+        <>
+          <SectionTitle title="Delivery address" />
+          <View style={[styles.formCard, shadows.card]}>
+            <TextInput
+              value={address}
+              onChangeText={setAddress}
+              style={styles.input}
+              placeholder="Building, street, city"
+              maxLength={180}
+              autoCapitalize="words"
+              textContentType="fullStreetAddress"
+            />
+          </View>
+        </>
+      ) : null}
+
+      <SectionTitle title="Quantity" />
       <View style={[styles.formCard, shadows.card]}>
-        <Text style={styles.label}>Address</Text>
-        <TextInput
-          value={address}
-          onChangeText={setAddress}
-          style={styles.input}
-          placeholder="Building, street, city"
-          maxLength={180}
-          autoCapitalize="words"
-          textContentType="fullStreetAddress"
-        />
-        <Text style={styles.label}>Estimated weight</Text>
+        <Text style={styles.label}>
+          {selectedType.label} ({selectedType.unit})
+        </Text>
         <View style={styles.stepper}>
-          <Pressable style={styles.stepButton} onPress={() => setEstimatedKg((value) => Math.max(1, value - 1))}>
+          <Pressable style={styles.stepButton} onPress={() => setQuantity((value) => Math.max(1, value - 1))}>
             <Ionicons name="remove" size={18} color={colors.ink} />
           </Pressable>
-          <Text style={styles.kg}>{estimatedKg} kg</Text>
-          <Pressable style={styles.stepButton} onPress={() => setEstimatedKg((value) => Math.min(30, value + 1))}>
+          <Text style={styles.kg}>
+            {quantity} {selectedType.unit}
+          </Text>
+          <Pressable style={styles.stepButton} onPress={() => setQuantity((value) => Math.min(30, value + 1))}>
             <Ionicons name="add" size={18} color={colors.ink} />
           </Pressable>
         </View>
@@ -97,16 +135,30 @@ export function BookingScreen() {
           value={notes}
           onChangeText={setNotes}
           style={[styles.input, styles.notes]}
-          placeholder="Gate code, fabric care, stain notes"
+          placeholder="Fabric care, stain notes"
           maxLength={240}
           multiline
         />
       </View>
 
-      <SectionTitle title="Selected shop" />
+      <SectionTitle title="Payment method" />
+      <View style={styles.wrap}>
+        {paymentMethods.map((method) => (
+          <Chip
+            key={method}
+            label={method}
+            selected={method === paymentMethod}
+            onPress={() => setPaymentMethod(method)}
+          />
+        ))}
+      </View>
+
+      <SectionTitle title="Summary" />
       <View style={[styles.summary, shadows.card]}>
-        <Text style={styles.shopName}>{selectedShop?.name}</Text>
-        <Text style={styles.summaryText}>{selectedShop?.etaMinutes} min pickup estimate</Text>
+        <Text style={styles.shopName}>{selectedType.label}</Text>
+        <Text style={styles.summaryText}>
+          {loads} load{loads === 1 ? "" : "s"} · ₱{pricePerLoad} each
+        </Text>
         <View style={styles.priceRow}>
           <Text style={styles.priceLabel}>Estimated total</Text>
           <Text style={styles.price}>₱{estimate}</Text>

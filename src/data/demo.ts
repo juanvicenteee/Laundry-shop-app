@@ -1,75 +1,64 @@
-import type { Order, Shop } from "../types";
+import type { DeliveryOption, LaundryType, Order, PaymentMethod } from "../types";
 
-export const shops: Shop[] = [
-  {
-    id: "washmate-bgc",
-    name: "WashMate Express",
-    distanceKm: 1.2,
-    etaMinutes: 14,
-    rating: 4.8,
-    basePrice: 165,
-    open: true,
-    tags: ["Same day", "Eco wash", "Ironing"],
-    address: "High Street, BGC"
-  },
-  {
-    id: "freshfold-makati",
-    name: "FreshFold Laundry",
-    distanceKm: 2.4,
-    etaMinutes: 21,
-    rating: 4.7,
-    basePrice: 140,
-    open: true,
-    tags: ["Budget", "Pickup now", "Dry clean"],
-    address: "Legazpi Village, Makati"
-  },
-  {
-    id: "linenlab-ortigas",
-    name: "LinenLab Care",
-    distanceKm: 4.1,
-    etaMinutes: 33,
-    rating: 4.9,
-    basePrice: 220,
-    open: false,
-    tags: ["Premium", "Bedding", "Delicates"],
-    address: "ADB Avenue, Ortigas"
-  }
+export const shopInfo = {
+  name: "Bubbly-fi Laundry Shop",
+  address: "92 14th Ave, Cubao, Quezon City, 1109 Metro Manila",
+  phone: "+63 998 885 5650",
+  hours: "Hours not set yet",
+  facebook: "https://www.facebook.com/bubblyfi"
+};
+
+export const pricePerLoad = 240;
+
+export const laundryTypes: LaundryType[] = [
+  { id: "regular", label: "Regular laundry", unit: "kg", capacity: 8, category: "Regular load" },
+  { id: "blanket", label: "Thick blankets", unit: "kg", capacity: 2, category: "Thick blanket" },
+  { id: "comforter", label: "Comforter", unit: "pc", capacity: 1, category: "Comforter" },
+  { id: "sheets", label: "Bedsheets or towels", unit: "kg", capacity: 5, category: "Bedsheets / towels" }
+];
+
+export const defaultLaundryType: LaundryType = laundryTypes[0]!;
+
+export const deliveryOptions: DeliveryOption[] = [
+  { id: "none", label: "Drop off at counter", fee: 0 },
+  { id: "oneWay", label: "One-way delivery", fee: 80 },
+  { id: "roundTrip", label: "Round trip pickup & delivery", fee: 140 }
+];
+
+export const defaultDeliveryOption: DeliveryOption = deliveryOptions[0]!;
+
+export const paymentMethods: PaymentMethod[] = ["Cash", "GCash", "Maya", "Bank Transfer"];
+
+export const defaultPaymentMethod: PaymentMethod = paymentMethods[0]!;
+
+export const timeWindows = [
+  "Drop off now",
+  "Today, 2 PM - 4 PM",
+  "Today, 6 PM - 8 PM",
+  "Tomorrow, 8 AM - 10 AM"
 ];
 
 export const activeOrders: Order[] = [
   {
-    id: "LG-1048",
-    shopName: "WashMate Express",
-    status: "Rider pickup",
-    eta: "11 min",
-    price: 318,
-    items: "6 kg wash and fold",
-    rider: "Mika",
-    progress: 0.28
+    id: "BF-2031",
+    laundryType: "regular",
+    quantity: 8,
+    loads: 1,
+    status: "Washing",
+    paymentStatus: "Unpaid",
+    paymentMethod: "Cash",
+    delivery: 0,
+    amount: 240
   },
   {
-    id: "LG-1039",
-    shopName: "FreshFold Laundry",
-    status: "Quality check",
-    eta: "Today, 6:40 PM",
-    price: 242,
-    items: "4 kg wash, 3 shirts ironed",
-    rider: "Assigned after packing",
-    progress: 0.74
+    id: "BF-2028",
+    laundryType: "sheets",
+    quantity: 6,
+    loads: 2,
+    status: "Ready",
+    paymentStatus: "Paid",
+    paymentMethod: "GCash",
+    delivery: 80,
+    amount: 560
   }
-];
-
-export const serviceOptions = [
-  "Wash and fold",
-  "Wash, dry, iron",
-  "Dry cleaning",
-  "Bedding and towels",
-  "Sneaker cleaning"
-];
-
-export const timeWindows = [
-  "Pickup now",
-  "Today, 2 PM - 4 PM",
-  "Today, 6 PM - 8 PM",
-  "Tomorrow, 8 AM - 10 AM"
 ];

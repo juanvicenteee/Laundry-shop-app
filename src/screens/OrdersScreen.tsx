@@ -3,53 +3,65 @@ import { StyleSheet, Text, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { SectionTitle } from "../components/SectionTitle";
-import { activeOrders } from "../data/demo";
+import { activeOrders, laundryTypes } from "../data/demo";
 import { colors, shadows, spacing } from "../theme";
+import type { OrderStatus } from "../types";
 
-const steps = ["Booked", "Pickup", "Washing", "Check", "Delivery"];
+const steps: OrderStatus[] = ["Received", "Washing", "Drying", "Ready", "Claimed"];
 
 export function OrdersScreen() {
   return (
     <AppScreen>
       <Text style={styles.heading}>Orders</Text>
-      <Text style={styles.subheading}>Track pickup, washing, and delivery in one place.</Text>
+      <Text style={styles.subheading}>Track your laundry from drop-off to claim.</Text>
 
       <SectionTitle title="In progress" />
-      {activeOrders.map((order) => (
-        <View key={order.id} style={[styles.card, shadows.card]}>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.orderId}>{order.id}</Text>
-              <Text style={styles.shop}>{order.shopName}</Text>
+      {activeOrders.map((order) => {
+        const type = laundryTypes.find((item) => item.id === order.laundryType);
+        const statusIndex = steps.indexOf(order.status);
+        return (
+          <View key={order.id} style={[styles.card, shadows.card]}>
+            <View style={styles.header}>
+              <View>
+                <Text style={styles.orderId}>{order.id}</Text>
+                <Text style={styles.shop}>{type?.label}</Text>
+              </View>
+              <Text style={styles.price}>₱{order.amount}</Text>
             </View>
-            <Text style={styles.price}>₱{order.price}</Text>
-          </View>
-          <Text style={styles.items}>{order.items}</Text>
-          <View style={styles.timeline}>
-            {steps.map((step, index) => {
-              const active = index / (steps.length - 1) <= order.progress;
-              return (
-                <View key={step} style={styles.step}>
-                  <View style={[styles.dot, active && styles.activeDot]}>
-                    {active ? <Ionicons name="checkmark" size={12} color="#FFFFFF" /> : null}
+            <Text style={styles.items}>
+              {order.quantity}
+              {type?.unit} · {order.loads} load{order.loads === 1 ? "" : "s"}
+            </Text>
+            <View style={styles.timeline}>
+              {steps.map((step, index) => {
+                const active = index <= statusIndex;
+                return (
+                  <View key={step} style={styles.step}>
+                    <View style={[styles.dot, active && styles.activeDot]}>
+                      {active ? <Ionicons name="checkmark" size={12} color="#FFFFFF" /> : null}
+                    </View>
+                    <Text style={[styles.stepText, active && styles.activeStep]}>{step}</Text>
                   </View>
-                  <Text style={[styles.stepText, active && styles.activeStep]}>{step}</Text>
-                </View>
-              );
-            })}
-          </View>
-          <View style={styles.footer}>
-            <View>
-              <Text style={styles.footerLabel}>Rider</Text>
-              <Text style={styles.footerValue}>{order.rider}</Text>
+                );
+              })}
             </View>
-            <View>
-              <Text style={styles.footerLabel}>ETA</Text>
-              <Text style={styles.footerValue}>{order.eta}</Text>
+            <View style={styles.footer}>
+              <View>
+                <Text style={styles.footerLabel}>Payment</Text>
+                <Text style={styles.footerValue}>
+                  {order.paymentMethod} · {order.paymentStatus}
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.footerLabel}>{order.delivery > 0 ? "Delivery" : "Pickup"}</Text>
+                <Text style={styles.footerValue}>
+                  {order.delivery > 0 ? `₱${order.delivery} fee` : "At counter"}
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </AppScreen>
   );
 }

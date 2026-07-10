@@ -1,14 +1,13 @@
-# Laundry Go
+# Bubbly-fi Laundry
 
-Laundry Go is a Grab-style mobile app starter for laundry pickup and delivery on Android and iOS. It is built with Expo React Native and TypeScript.
+Bubbly-fi Laundry is the customer-facing mobile app for Bubbly-fi Laundry Shop (92 14th Ave, Cubao, Quezon City), a single-shop laundry business with optional pickup/delivery. It is built with Expo React Native and TypeScript.
 
 ## Core flows
 
-- Customer booking for pickup, laundry service, schedule, and delivery address.
-- Nearby laundry shop discovery with ETA, rating, price, and service tags.
-- Live order tracking UI for pickup, washing, quality check, delivery, and completion.
-- Wallet and payment status surface.
-- Shop and rider operations screen for accepting work and managing handoffs.
+- Customer booking by laundry type (regular, blankets, comforter, bedsheets/towels), with load-based pricing and an optional delivery add-on.
+- Order tracking through the shop's real workflow: Received, Washing, Drying, Ready, Claimed.
+- Payment method selection (Cash, GCash, Maya, Bank Transfer) matching how the shop's own dashboard records payments.
+- Internal work hub for shop staff to advance orders through the wash/dry/claim pipeline.
 
 ## Run locally
 

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { useMemo, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { Chip } from "../components/Chip";
@@ -25,6 +26,8 @@ export function BookingScreen() {
   const [delivery, setDelivery] = useState<DeliveryOptionId>("none");
   const [pickupWindow, setPickupWindow] = useState(timeWindows[0] ?? "");
   const [address, setAddress] = useState("");
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locating, setLocating] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(defaultPaymentMethod);
   const [notes, setNotes] = useState("");
 
@@ -51,6 +54,30 @@ export function BookingScreen() {
     }
 
     Alert.alert("Booking ready", "This demo booking passed validation and is ready for the API.");
+  }
+
+  async function useCurrentLocation() {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Location permission needed", "Allow location access to auto-fill your delivery address.");
+        return;
+      }
+
+      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setCoords({ latitude: position.coords.latitude, longitude: position.coords.longitude });
+
+      const [place] = await Location.reverseGeocodeAsync(position.coords);
+      if (place) {
+        const parts = [place.name, place.street, place.district, place.city].filter(Boolean);
+        if (parts.length) setAddress(parts.join(", "));
+      }
+    } catch {
+      Alert.alert("Couldn't get location", "Enter your delivery address manually.");
+    } finally {
+      setLocating(false);
+    }
   }
 
   return (
@@ -103,13 +130,25 @@ export function BookingScreen() {
           <View style={[styles.formCard, shadows.card]}>
             <TextInput
               value={address}
-              onChangeText={setAddress}
+              onChangeText={(value) => {
+                setAddress(value);
+                setCoords(null);
+              }}
               style={styles.input}
               placeholder="Building, street, city"
               maxLength={180}
               autoCapitalize="words"
               textContentType="fullStreetAddress"
             />
+            <Pressable style={styles.locateButton} onPress={useCurrentLocation} disabled={locating}>
+              {locating ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="locate" size={16} color={colors.primary} />
+              )}
+              <Text style={styles.locateText}>{locating ? "Locating..." : "Use my current location"}</Text>
+            </Pressable>
+            {coords ? <Text style={styles.locateHint}>Pinned via GPS for the rider.</Text> : null}
           </View>
         </>
       ) : null}
@@ -215,6 +254,22 @@ const styles = StyleSheet.create({
     minHeight: 82,
     paddingTop: spacing.md,
     textAlignVertical: "top"
+  },
+  locateButton: {
+    minHeight: 40,
+    marginTop: spacing.sm,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs
+  },
+  locateText: {
+    color: colors.primary,
+    fontWeight: "800"
+  },
+  locateHint: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: spacing.xs
   },
   stepper: {
     flexDirection: "row",

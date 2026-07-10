@@ -4,7 +4,7 @@ export const shopInfo = {
   name: "Bubbly-fi Laundry Shop",
   address: "92 14th Ave, Cubao, Quezon City, 1109 Metro Manila",
   phone: "+63 998 885 5650",
-  hours: "Hours not set yet",
+  hours: "7:30 AM - 9:00 PM",
   facebook: "https://www.facebook.com/bubblyfi"
 };
 
@@ -22,7 +22,7 @@ export const defaultLaundryType: LaundryType = laundryTypes[0]!;
 export const deliveryOptions: DeliveryOption[] = [
   { id: "none", label: "Drop off at counter", fee: 0 },
   { id: "oneWay", label: "One-way delivery", fee: 80 },
-  { id: "roundTrip", label: "Round trip pickup & delivery", fee: 140 }
+  { id: "roundTrip", label: "Round trip pickup & delivery (Cubao area)", fee: 60 }
 ];
 
 export const defaultDeliveryOption: DeliveryOption = deliveryOptions[0]!;

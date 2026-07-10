@@ -55,10 +55,15 @@ export function HomeScreen() {
 
       <SectionTitle title="Shop info" />
       <View style={[styles.infoCard, shadows.card]}>
-        <View style={styles.infoRow}>
+        <Pressable
+          style={styles.infoRow}
+          onPress={() =>
+            Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shopInfo.address)}`)
+          }
+        >
           <Ionicons name="location" size={18} color={colors.primary} />
-          <Text style={styles.infoText}>{shopInfo.address}</Text>
-        </View>
+          <Text style={[styles.infoText, styles.link]}>{shopInfo.address}</Text>
+        </Pressable>
         <View style={styles.infoRow}>
           <Ionicons name="time" size={18} color={colors.primary} />
           <Text style={styles.infoText}>{shopInfo.hours}</Text>
@@ -66,6 +71,15 @@ export function HomeScreen() {
         <Pressable style={styles.infoRow} onPress={() => Linking.openURL(`tel:${shopInfo.phone}`)}>
           <Ionicons name="call" size={18} color={colors.primary} />
           <Text style={[styles.infoText, styles.link]}>{shopInfo.phone}</Text>
+        </Pressable>
+        <Pressable
+          style={styles.directionsButton}
+          onPress={() =>
+            Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(shopInfo.address)}`)
+          }
+        >
+          <Ionicons name="navigate" size={16} color="#FFFFFF" />
+          <Text style={styles.directionsText}>Get directions</Text>
         </Pressable>
       </View>
 
@@ -197,6 +211,20 @@ const styles = StyleSheet.create({
   },
   link: {
     color: colors.primary
+  },
+  directionsButton: {
+    height: 44,
+    marginTop: spacing.xs,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.primary
+  },
+  directionsText: {
+    color: "#FFFFFF",
+    fontWeight: "900"
   },
   serviceCard: {
     backgroundColor: colors.surface,

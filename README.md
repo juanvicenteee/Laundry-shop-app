@@ -12,10 +12,10 @@ Laundry Go is a Grab-style mobile app starter for laundry pickup and delivery on
 
 ## Run locally
 
-1. Install Node.js 18+.
-2. Run `npm install`.
-3. Run `npm run start`.
-4. Open in Expo Go or an emulator with `npm run android` or `npm run ios`.
+1. Install Node.js 18+ and pnpm.
+2. Run `pnpm install`.
+3. Run `pnpm start`.
+4. Open in Expo Go or an emulator with `pnpm android` or `pnpm ios`.
 
 ## Security baseline
 

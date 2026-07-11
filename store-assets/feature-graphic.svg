@@ -1,12 +1,12 @@
 <svg width="1024" height="500" viewBox="0 0 1024 500" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#16A3A6"/>
-      <stop offset="100%" stop-color="#0D777A"/>
+      <stop offset="0%" stop-color="#4FB6E0"/>
+      <stop offset="100%" stop-color="#1B4D74"/>
     </linearGradient>
     <linearGradient id="mark" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#55D6D2"/>
-      <stop offset="100%" stop-color="#F6C65B"/>
+      <stop offset="0%" stop-color="#8FD9F2"/>
+      <stop offset="100%" stop-color="#4FB6E0"/>
     </linearGradient>
   </defs>
 
@@ -26,11 +26,11 @@
 
   <!-- logo mark -->
   <rect x="64" y="176" width="112" height="112" rx="24" fill="url(#mark)"/>
-  <text x="120" y="252" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="900" fill="#102431" text-anchor="middle">Bf</text>
+  <text x="120" y="252" font-family="Arial, Helvetica, sans-serif" font-size="52" font-weight="900" fill="#1B4D74" text-anchor="middle">Bf</text>
 
   <!-- wordmark -->
   <text x="200" y="228" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="900" fill="#FFFFFF">Bubbly-fi</text>
-  <text x="200" y="270" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#E6FFF5">Laundry Shop</text>
+  <text x="200" y="270" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#D9F1FB">Laundry Shop</text>
 
   <!-- tagline -->
   <text x="64" y="360" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" fill="#FFFFFF">Book pickup, delivery, or counter drop-off</text>

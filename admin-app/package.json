@@ -1,0 +1,48 @@
+{
+  "name": "bubbly-fi-admin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Staff app for Bubbly-fi Laundry Shop: admin/operator login, request intake, order management, and push notifications.",
+  "main": "expo/AppEntry.js",
+  "packageManager": "pnpm@11.11.0",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "^57.0.3",
+    "@expo/vector-icons": "^15.1.1",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "expo": "~57.0.4",
+    "expo-constants": "~57.0.3",
+    "expo-device": "~7.0.0",
+    "expo-font": "~57.0.0",
+    "expo-notifications": "~0.32.0",
+    "expo-splash-screen": "~57.0.2",
+    "expo-status-bar": "~57.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-url-polyfill": "^3.0.0",
+    "react-native-web": "^0.21.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.7",
+    "@types/react": "~19.2.17",
+    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/parser": "^8.63.0",
+    "babel-preset-expo": "~57.0.2",
+    "eslint": "^9.39.1",
+    "eslint-config-expo": "^57.0.0",
+    "typescript": "~6.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

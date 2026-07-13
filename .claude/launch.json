@@ -6,6 +6,13 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["expo", "start", "--web", "--port", "8090"],
       "port": 8090
+    },
+    {
+      "name": "admin-web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8091"],
+      "cwd": "admin-app",
+      "port": 8091
     }
   ]
 }

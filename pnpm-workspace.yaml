@@ -1,5 +1,6 @@
 packages:
   - "."
+  - "admin-app"
 allowBuilds:
   unrs-resolver: false
 overrides:

@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "Bubbly-fi Staff",
+    "slug": "bubbly-fi-admin",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "bubblyfistaff",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bubblyfi.staff",
+      "infoPlist": {
+        "NSUserNotificationsUsageDescription": "Bubbly-fi Staff uses notifications to alert you the moment a new customer request comes in."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F7FAFC"
+      },
+      "package": "com.bubblyfi.staff",
+      "permissions": [
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#F7FAFC"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "PLACEHOLDER_RUN_EAS_INIT"
+      }
+    },
+    "owner": "bubbly-fi"
+  }
+}

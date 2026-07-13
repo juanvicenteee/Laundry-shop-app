@@ -43,11 +43,11 @@
         }
       ]
     ],
+    "owner": "bubbly-fi",
     "extra": {
       "eas": {
-        "projectId": "PLACEHOLDER_RUN_EAS_INIT"
+        "projectId": "da5ae064-646e-44b8-985f-ce2a375635e5"
       }
-    },
-    "owner": "bubbly-fi"
+    }
   }
 }

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { Chip } from "../components/Chip";
@@ -14,15 +14,16 @@ import {
   laundryTypes,
   paymentMethods,
   pricePerLoad,
-  shopInfo,
   timeWindows
 } from "../data/demo";
+import { submitBookingRequest } from "../lib/bookingApi";
 import { colors, shadows, spacing } from "../theme";
 import type { DeliveryOptionId, LaundryTypeId, PaymentMethod } from "../types";
-import { buildOrderMessage, generateClaimPin, generateOrderReference } from "../utils/orderNotify";
 import { bookingSchema } from "../validation/booking";
 
 export function BookingScreen() {
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
   const [laundryType, setLaundryType] = useState<LaundryTypeId>(defaultLaundryType.id);
   const [quantity, setQuantity] = useState(defaultLaundryType.capacity);
   const [delivery, setDelivery] = useState<DeliveryOptionId>("none");
@@ -32,6 +33,7 @@ export function BookingScreen() {
   const [locating, setLocating] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(defaultPaymentMethod);
   const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const selectedType = laundryTypes.find((type) => type.id === laundryType) ?? defaultLaundryType;
   const selectedDelivery = deliveryOptions.find((option) => option.id === delivery) ?? defaultDeliveryOption;
@@ -41,6 +43,8 @@ export function BookingScreen() {
 
   async function submitBooking() {
     const parsed = bookingSchema.safeParse({
+      customerName,
+      phone,
       laundryType,
       quantity,
       delivery,
@@ -55,37 +59,30 @@ export function BookingScreen() {
       return;
     }
 
-    const reference = generateOrderReference();
-    const claimPin = generateClaimPin();
-    const message = buildOrderMessage({
-      reference,
-      claimPin,
-      laundryType: selectedType,
-      quantity,
-      loads,
-      pickupWindow,
-      delivery: selectedDelivery,
-      address,
-      paymentMethod,
-      notes,
-      total: estimate
-    });
+    setSubmitting(true);
+    try {
+      const result = await submitBookingRequest({
+        customerName,
+        phone,
+        laundryType,
+        quantity,
+        delivery,
+        address,
+        pickupWindow,
+        paymentMethod,
+        notes,
+        coords,
+        quotedTotal: estimate
+      });
 
-    const separator = Platform.OS === "ios" ? "&" : "?";
-    const smsUrl = `sms:${shopInfo.phone}${separator}body=${encodeURIComponent(message)}`;
-
-    const canOpenSms = await Linking.canOpenURL(smsUrl);
-    if (canOpenSms) {
-      await Linking.openURL(smsUrl);
       Alert.alert(
-        `Reference ${reference}`,
-        `Send the text to notify Bubbly-fi. Keep your claim PIN ${claimPin} - show it at pickup to verify your order.`
+        `Booking ${result.request_no}`,
+        `Bubbly-fi received your request. Total: PHP ${result.total}. We'll text you a confirmation shortly.`
       );
-    } else {
-      Alert.alert(
-        `Reference ${reference}`,
-        `Text this order to ${shopInfo.phone} to confirm, and keep PIN ${claimPin} for pickup.\n\n${message}`
-      );
+    } catch (error) {
+      Alert.alert("Couldn't submit booking", error instanceof Error ? error.message : "Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -117,6 +114,30 @@ export function BookingScreen() {
     <AppScreen>
       <Text style={styles.heading}>Book laundry</Text>
       <Text style={styles.subheading}>Choose a laundry type, time, and delivery option.</Text>
+
+      <SectionTitle title="Your details" />
+      <View style={[styles.formCard, shadows.card]}>
+        <Text style={styles.label}>Full name</Text>
+        <TextInput
+          value={customerName}
+          onChangeText={setCustomerName}
+          style={styles.input}
+          placeholder="Juan Dela Cruz"
+          maxLength={80}
+          autoCapitalize="words"
+          textContentType="name"
+        />
+        <Text style={styles.label}>Mobile number</Text>
+        <TextInput
+          value={phone}
+          onChangeText={setPhone}
+          style={styles.input}
+          placeholder="09XX XXX XXXX"
+          maxLength={20}
+          keyboardType="phone-pad"
+          textContentType="telephoneNumber"
+        />
+      </View>
 
       <SectionTitle title="Laundry type" />
       <View style={styles.wrap}>
@@ -224,6 +245,10 @@ export function BookingScreen() {
           />
         ))}
       </View>
+      <Text style={styles.paymentHint}>
+        Online bookings with delivery are confirmed and settled via GCash. Counter drop-off can pay any method in
+        person.
+      </Text>
 
       <SectionTitle title="Summary" />
       <View style={[styles.summary, shadows.card]}>
@@ -235,9 +260,13 @@ export function BookingScreen() {
           <Text style={styles.priceLabel}>Estimated total</Text>
           <Text style={styles.price}>₱{estimate}</Text>
         </View>
-        <Pressable style={styles.cta} onPress={submitBooking}>
-          <Ionicons name="shield-checkmark" size={20} color="#FFFFFF" />
-          <Text style={styles.ctaText}>Validate and book</Text>
+        <Pressable style={styles.cta} onPress={submitBooking} disabled={submitting}>
+          {submitting ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <Ionicons name="shield-checkmark" size={20} color="#FFFFFF" />
+          )}
+          <Text style={styles.ctaText}>{submitting ? "Sending..." : "Validate and book"}</Text>
         </Pressable>
       </View>
     </AppScreen>
@@ -303,6 +332,11 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 12,
     marginTop: spacing.xs
+  },
+  paymentHint: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: spacing.sm
   },
   stepper: {
     flexDirection: "row",

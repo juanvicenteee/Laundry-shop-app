@@ -1,7 +1,11 @@
 import { z } from "zod";
 
+const PH_MOBILE = /^(\+639\d{9}|09\d{9}|9\d{9})$/;
+
 export const bookingSchema = z
   .object({
+    customerName: z.string().trim().min(2, "Enter your full name."),
+    phone: z.string().trim().regex(PH_MOBILE, "Enter a valid PH mobile number (09XX XXX XXXX)."),
     laundryType: z.enum(["regular", "blanket", "comforter", "sheets"]),
     quantity: z.number().min(1).max(30),
     delivery: z.enum(["none", "mplace", "portovita", "manhattan", "cubao", "outsideCubao"]),

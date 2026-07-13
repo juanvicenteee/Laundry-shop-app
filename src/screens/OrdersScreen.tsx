@@ -1,74 +1,129 @@
 import { Ionicons } from "@expo/vector-icons";
-import { StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { SectionTitle } from "../components/SectionTitle";
-import { activeOrders, laundryTypes } from "../data/demo";
+import { fetchMyRequests, getRememberedPhone, type MyRequest } from "../lib/myRequests";
 import { colors, shadows, spacing } from "../theme";
-import type { OrderStatus } from "../types";
 
-const steps: OrderStatus[] = ["Received", "Washing", "Drying", "Ready", "Claimed"];
+const orderSteps = ["Received", "Washing", "Drying", "Ready", "Claimed"];
 
 export function OrdersScreen() {
+  const [phone, setPhone] = useState<string | null>(null);
+  const [requests, setRequests] = useState<MyRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErrorMessage(null);
+    try {
+      const storedPhone = await getRememberedPhone();
+      setPhone(storedPhone);
+      if (storedPhone) {
+        const rows = await fetchMyRequests(storedPhone);
+        setRequests(rows);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Couldn't load your orders.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch on mount, not a render loop
+    load();
+  }, [load]);
+
   return (
     <AppScreen>
-      <Text style={styles.heading}>Orders</Text>
-      <Text style={styles.subheading}>Track your laundry from drop-off to claim.</Text>
+      <View style={styles.topRow}>
+        <View>
+          <Text style={styles.heading}>Orders</Text>
+          <Text style={styles.subheading}>Track your laundry from drop-off to claim.</Text>
+        </View>
+        <Pressable onPress={load} accessibilityLabel="Refresh orders">
+          <Ionicons name="refresh" size={22} color={colors.primary} />
+        </Pressable>
+      </View>
 
       <SectionTitle title="In progress" />
-      {activeOrders.map((order) => {
-        const type = laundryTypes.find((item) => item.id === order.laundryType);
-        const statusIndex = steps.indexOf(order.status);
-        return (
-          <View key={order.id} style={[styles.card, shadows.card]}>
-            <View style={styles.header}>
-              <View>
-                <Text style={styles.orderId}>{order.id}</Text>
-                <Text style={styles.shop}>{type?.label}</Text>
+
+      {loading ? <ActivityIndicator style={styles.spinner} size="large" color={colors.primary} /> : null}
+
+      {!loading && !phone ? (
+        <Text style={styles.emptyText}>Book your first order to start tracking it here.</Text>
+      ) : null}
+
+      {!loading && errorMessage ? <Text style={styles.emptyText}>{errorMessage}</Text> : null}
+
+      {!loading && phone && !errorMessage && requests.length === 0 ? (
+        <Text style={styles.emptyText}>No orders yet for this number.</Text>
+      ) : null}
+
+      {!loading &&
+        requests.map((request) => {
+          const statusIndex = request.order_status ? orderSteps.indexOf(request.order_status) : -1;
+          return (
+            <View key={request.id} style={[styles.card, shadows.card]}>
+              <View style={styles.header}>
+                <View>
+                  <Text style={styles.orderId}>{request.receipt_no ?? request.request_no}</Text>
+                  <Text style={styles.shop}>{request.item_type.replace(/_/g, " ")}</Text>
+                </View>
+                <Text style={styles.price}>₱{request.total}</Text>
               </View>
-              <Text style={styles.price}>₱{order.amount}</Text>
-            </View>
-            <Text style={styles.items}>
-              {order.quantity}
-              {type?.unit} · {order.loads} load{order.loads === 1 ? "" : "s"}
-            </Text>
-            <View style={styles.timeline}>
-              {steps.map((step, index) => {
-                const active = index <= statusIndex;
-                return (
-                  <View key={step} style={styles.step}>
-                    <View style={[styles.dot, active && styles.activeDot]}>
-                      {active ? <Ionicons name="checkmark" size={12} color="#FFFFFF" /> : null}
-                    </View>
-                    <Text style={[styles.stepText, active && styles.activeStep]}>{step}</Text>
-                  </View>
-                );
-              })}
-            </View>
-            <View style={styles.footer}>
-              <View>
-                <Text style={styles.footerLabel}>Payment</Text>
-                <Text style={styles.footerValue}>
-                  {order.paymentMethod} · {order.paymentStatus}
-                </Text>
+              <Text style={styles.items}>
+                {request.quantity}
+                {request.unit} · {request.loads} load{request.loads === 1 ? "" : "s"}
+              </Text>
+
+              {request.order_status ? (
+                <View style={styles.timeline}>
+                  {orderSteps.map((step, index) => {
+                    const active = index <= statusIndex;
+                    return (
+                      <View key={step} style={styles.step}>
+                        <View style={[styles.dot, active && styles.activeDot]}>
+                          {active ? <Ionicons name="checkmark" size={12} color="#FFFFFF" /> : null}
+                        </View>
+                        <Text style={[styles.stepText, active && styles.activeStep]}>{step}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.statusBadge}>
+                  <Text style={styles.statusBadgeText}>{request.status}</Text>
+                </View>
+              )}
+
+              <View style={styles.footer}>
+                <View>
+                  <Text style={styles.footerLabel}>{request.delivery_requested ? "Delivery" : "Pickup"}</Text>
+                  <Text style={styles.footerValue}>
+                    {request.delivery_requested ? request.full_address : "At counter"}
+                  </Text>
+                </View>
               </View>
-              <View>
-                <Text style={styles.footerLabel}>{order.delivery > 0 ? "Delivery" : "Pickup"}</Text>
-                <Text style={styles.footerValue}>
-                  {order.delivery > 0 ? `₱${order.delivery} fee` : "At counter"}
-                </Text>
-              </View>
             </View>
-          </View>
-        );
-      })}
+          );
+        })}
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  heading: {
+  topRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginTop: spacing.md,
+    gap: spacing.md
+  },
+  heading: {
     color: colors.ink,
     fontSize: 28,
     lineHeight: 34,
@@ -78,6 +133,13 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 15,
     lineHeight: 22,
+    marginTop: spacing.sm
+  },
+  spinner: {
+    marginTop: spacing.xl
+  },
+  emptyText: {
+    color: colors.muted,
     marginTop: spacing.sm
   },
   card: {
@@ -99,7 +161,8 @@ const styles = StyleSheet.create({
   },
   shop: {
     color: colors.muted,
-    marginTop: spacing.xs
+    marginTop: spacing.xs,
+    textTransform: "capitalize"
   },
   price: {
     color: colors.ink,
@@ -139,6 +202,18 @@ const styles = StyleSheet.create({
   },
   activeStep: {
     color: colors.ink
+  },
+  statusBadge: {
+    alignSelf: "flex-start",
+    marginTop: spacing.lg,
+    borderRadius: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.primarySoft
+  },
+  statusBadgeText: {
+    color: colors.primary,
+    fontWeight: "800"
   },
   footer: {
     flexDirection: "row",

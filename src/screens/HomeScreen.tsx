@@ -1,14 +1,32 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import { useEffect, useState } from "react";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { SectionTitle } from "../components/SectionTitle";
-import { activeOrders, laundryTypes, pricePerLoad, shopInfo } from "../data/demo";
+import { laundryTypes, pricePerLoad, shopInfo } from "../data/demo";
+import { fetchMyRequests, getRememberedPhone, type MyRequest } from "../lib/myRequests";
 import { colors, shadows, spacing } from "../theme";
 
 export function HomeScreen() {
-  const activeOrder = activeOrders[0];
+  const [activeOrder, setActiveOrder] = useState<MyRequest | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const phone = await getRememberedPhone();
+        if (!phone) return;
+        const requests = await fetchMyRequests(phone);
+        const active = requests.find((request) => request.status !== "Rejected" && request.order_status !== "Claimed");
+        if (active) setActiveOrder(active);
+      } catch {
+        // Home screen preview is best-effort; Orders tab shows the full picture with error states.
+      }
+    }
+
+    load();
+  }, []);
 
   return (
     <AppScreen>
@@ -37,17 +55,15 @@ export function HomeScreen() {
           <SectionTitle title="Active order" action="Track" />
           <View style={[styles.orderCard, shadows.card]}>
             <View style={styles.orderHeader}>
-              <Text style={styles.orderId}>{activeOrder.id}</Text>
-              <Text style={styles.orderStatus}>{activeOrder.status}</Text>
+              <Text style={styles.orderId}>{activeOrder.receipt_no ?? activeOrder.request_no}</Text>
+              <Text style={styles.orderStatus}>{activeOrder.order_status ?? activeOrder.status}</Text>
             </View>
-            <Text style={styles.orderText}>
-              {laundryTypes.find((type) => type.id === activeOrder.laundryType)?.label}
-            </Text>
+            <Text style={styles.orderText}>{activeOrder.item_type.replace(/_/g, " ")}</Text>
             <View style={styles.orderFooter}>
               <Text style={styles.orderText}>
                 {activeOrder.loads} load{activeOrder.loads === 1 ? "" : "s"}
               </Text>
-              <Text style={styles.orderEta}>₱{activeOrder.amount}</Text>
+              <Text style={styles.orderEta}>₱{activeOrder.total}</Text>
             </View>
           </View>
         </>

@@ -1,4 +1,4 @@
-import type { DeliveryOption, LaundryType, Order, PaymentMethod } from "../types";
+import type { DeliveryOption, LaundryType, PaymentMethod } from "../types";
 
 export const shopInfo = {
   name: "Bubbly-fi Laundry Shop",
@@ -39,29 +39,4 @@ export const timeWindows = [
   "Today, 2 PM - 4 PM",
   "Today, 6 PM - 8 PM",
   "Tomorrow, 8 AM - 10 AM"
-];
-
-export const activeOrders: Order[] = [
-  {
-    id: "BF-2031",
-    laundryType: "regular",
-    quantity: 8,
-    loads: 1,
-    status: "Washing",
-    paymentStatus: "Unpaid",
-    paymentMethod: "Cash",
-    delivery: 0,
-    amount: 240
-  },
-  {
-    id: "BF-2028",
-    laundryType: "sheets",
-    quantity: 6,
-    loads: 2,
-    status: "Ready",
-    paymentStatus: "Paid",
-    paymentMethod: "GCash",
-    delivery: 60,
-    amount: 540
-  }
 ];

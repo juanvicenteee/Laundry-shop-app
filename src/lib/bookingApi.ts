@@ -1,3 +1,4 @@
+import { rememberPhone } from "./myRequests";
 import { supabase } from "./supabase";
 import type { DeliveryOptionId, LaundryTypeId, PaymentMethod } from "../types";
 
@@ -106,6 +107,8 @@ export async function submitBookingRequest(input: BookingSubmission) {
 
   const { data, error } = await supabase.rpc("submit_customer_order", { p_payload: payload });
   if (error) throw error;
+
+  await rememberPhone(payload.phone);
 
   const requestNo = (data as { request_no?: string } | null)?.request_no;
   if (requestNo) {

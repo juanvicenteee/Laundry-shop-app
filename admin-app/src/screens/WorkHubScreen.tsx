@@ -5,6 +5,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "rea
 import { AppScreen } from "../components/AppScreen";
 import { useAuth } from "../lib/AuthContext";
 import { advanceOrderStatus, confirmRequest, fetchActiveOrders, fetchPendingRequests, rejectRequest } from "../lib/orders";
+import { registerForPushNotifications } from "../lib/pushNotifications";
 import { supabase } from "../lib/supabase";
 import { colors, shadows, spacing } from "../theme";
 import type { OrderRow, OrderStatus, RequestRow } from "../lib/types";
@@ -50,6 +51,12 @@ export function WorkHubScreen() {
       supabase.removeChannel(channel);
     };
   }, [loadAll]);
+
+  useEffect(() => {
+    if (profile?.id) {
+      registerForPushNotifications(profile.id);
+    }
+  }, [profile?.id]);
 
   async function handleConfirm(request: RequestRow) {
     setBusyId(request.id);

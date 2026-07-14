@@ -11,9 +11,9 @@ Book laundry drop-off or delivery with Bubbly-fi, Cubao's laundry shop.
 ## Full description (max 4000 characters)
 Bubbly-fi Laundry Shop makes it easy to book your laundry from your phone.
 
-Choose your service — regular wash, thick blankets, comforters, or bedsheets and towels — and get a price instantly based on real load pricing (₱240/load). Drop off at our Cubao counter, or choose delivery: ₱30 for MPlace Towers and Portovita Towers, ₱60 for Manhattan Residence and the rest of Cubao, ₱120 outside Cubao.
+Choose your service — regular wash, thick blankets, comforters, or bedsheets and towels — and get a price instantly based on real load pricing (₱240/load Full Service). Drop off at our Cubao counter, or choose delivery: ₱30 for MPlace Towers and Portovita Towers, ₱60 for Manhattan Residence and the rest of Cubao, ₱120 outside Cubao.
 
-Track your order from Received through Washing, Drying, Ready, and Claimed, right in the app. Pay however works for you: Cash, GCash, Maya, or Bank Transfer.
+Track your booking status right in the app — from submitted, to confirmed, through the wash cycle (Received, Washing, Drying, Ready) to Claimed. Online bookings with delivery are settled via GCash; counter drop-off accepts Cash, GCash, Maya, or Bank Transfer.
 
 Bubbly-fi Laundry Shop
 92 14th Ave, Cubao, Quezon City
@@ -34,13 +34,17 @@ https://github.com/juanvicenteee/Laundry-shop-app/blob/main/PRIVACY.md
 This app has no violence, gambling, user-generated content, or mature themes. Expect a rating of "Everyone" / "PEGI 3".
 
 ## Data safety form guidance
-- **Location**: Collected (precise), only when the user opts into delivery and taps "Use my current location." Not shared with third parties. Used only for app functionality (auto-filling the delivery address). Not linked to a user identity (no accounts/auth yet). Optional — user can decline and type an address manually.
-- **Personal info** (name/address/phone via the booking form, if you add those fields later): collected, used only for order fulfillment, not shared with third parties, not sold.
-- **No** financial info is collected in-app (payment happens outside the app via Cash/GCash/Maya/Bank Transfer).
-- **No** advertising or analytics SDKs are currently integrated.
+- **Name**: Collected (required for booking), used for order fulfillment, sent to and stored in the Bubbly-fi backend (Supabase). Not shared with third parties, not sold.
+- **Phone number**: Collected (required for booking), used for order fulfillment and SMS confirmation. Not shared with third parties, not sold.
+- **Precise location**: Collected, only when the user opts into delivery and taps "Use my current location." Used only for app functionality (auto-filling the delivery address, and server-side delivery-zone detection). Optional — user can decline and type an address manually.
+- **No** financial info is collected in-app (payment happens outside the app via Cash/GCash/Maya/Bank Transfer, or GCash-only for online delivery bookings).
+- **No** advertising or analytics SDKs are integrated.
+- Data is transmitted over HTTPS to Supabase (the shop's backend) and is not sold or shared with third parties for advertising.
 
 ## Screenshots needed
-Play Store requires at least 2 phone screenshots (recommended: Home, Book, Orders, Work — 4 screens covers it well). Use the web preview or an Android device/emulator to capture these; portrait, PNG or JPEG, 16:9 or higher aspect ratio.
+Play Store requires at least 2 phone screenshots (recommended: Home, Book, Orders — all 3 covers the customer app well). Use a real Android device with the current build (not the old screenshots, which show the previous teal theme and placeholder logo). Portrait, PNG or JPEG, 16:9 or higher aspect ratio.
+
+Note: "Work hub" is now a **separate staff-only app** (Bubbly-fi Staff), not part of this listing.
 
 ## Feature graphic
-1024x500 PNG/JPEG banner — not yet created. Needs actual design work (the current assets are just the icon/splash, not a wide banner).
+Done — see [store-assets/feature-graphic.png](store-assets/feature-graphic.png), 1024x500, using the real logo.

@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import * as Location from "expo-location";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Linking, ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { AppScreen } from "../components/AppScreen";
 import { Chip } from "../components/Chip";
@@ -17,6 +18,7 @@ import {
   timeWindows
 } from "../data/demo";
 import { submitBookingRequest } from "../lib/bookingApi";
+import { detectServiceArea, LALAMOVE_WEB_URL, SHOP_ADDRESS } from "../lib/serviceArea";
 import { colors, shadows, spacing } from "../theme";
 import type { DeliveryOptionId, LaundryTypeId, PaymentMethod } from "../types";
 import { bookingSchema } from "../validation/booking";
@@ -39,7 +41,25 @@ export function BookingScreen() {
   const selectedDelivery = deliveryOptions.find((option) => option.id === delivery) ?? defaultDeliveryOption;
   const loads = Math.max(1, Math.ceil(quantity / selectedType.capacity));
 
-  const estimate = useMemo(() => loads * pricePerLoad + selectedDelivery.fee, [loads, selectedDelivery]);
+  // GPS is authoritative when available - it can reveal "outside Cubao" even if the
+  // customer picked a specific building, matching how the backend derives place too.
+  const isOutsideByGps = coords ? detectServiceArea(coords.latitude, coords.longitude) === "outside" : false;
+  const isOutsideCubao = delivery !== "none" && (isOutsideByGps || delivery === "outsideCubao");
+
+  // Bubbly-fi charges PHP 0 delivery for outside-Cubao orders - LalaMove is arranged
+  // and paid separately by the customer, matching customer-v2.6.8.js exactly.
+  const deliveryFee = isOutsideCubao ? 0 : selectedDelivery.fee;
+  const estimate = useMemo(() => loads * pricePerLoad + deliveryFee, [loads, deliveryFee]);
+
+  async function openLalamove() {
+    try {
+      await Clipboard.setStringAsync(SHOP_ADDRESS);
+      Alert.alert("Address copied", "Shop address copied. Paste it into LalaMove.");
+    } catch {
+      Alert.alert("Copy this shop address", SHOP_ADDRESS);
+    }
+    Linking.openURL(LALAMOVE_WEB_URL);
+  }
 
   async function submitBooking() {
     const parsed = bookingSchema.safeParse({
@@ -204,6 +224,20 @@ export function BookingScreen() {
             </Pressable>
             {coords ? <Text style={styles.locateHint}>Pinned via GPS for the rider.</Text> : null}
           </View>
+
+          {isOutsideCubao ? (
+            <View style={[styles.lalamoveCard, shadows.card]}>
+              <Text style={styles.lalamoveTitle}>Bubbly-fi pickup/drop-off reference</Text>
+              <Text style={styles.lalamoveAddress}>{SHOP_ADDRESS}</Text>
+              <Text style={styles.lalamoveNote}>
+                LalaMove fee is quoted and paid separately and is not included in your Bubbly-fi total.
+              </Text>
+              <Pressable style={styles.lalamoveButton} onPress={openLalamove}>
+                <Ionicons name="bicycle" size={18} color="#FFFFFF" />
+                <Text style={styles.lalamoveButtonText}>Copy address & open LalaMove</Text>
+              </Pressable>
+            </View>
+          ) : null}
         </>
       ) : null}
 
@@ -260,6 +294,9 @@ export function BookingScreen() {
           <Text style={styles.priceLabel}>Estimated total</Text>
           <Text style={styles.price}>₱{estimate}</Text>
         </View>
+        {isOutsideCubao ? (
+          <Text style={styles.lalamoveSummaryNote}>Plus the LalaMove fee, quoted and paid separately.</Text>
+        ) : null}
         <Pressable style={styles.cta} onPress={submitBooking} disabled={submitting}>
           {submitting ? (
             <ActivityIndicator size="small" color="#FFFFFF" />
@@ -327,6 +364,44 @@ const styles = StyleSheet.create({
   locateText: {
     color: colors.primary,
     fontWeight: "800"
+  },
+  lalamoveCard: {
+    marginTop: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    padding: spacing.lg
+  },
+  lalamoveTitle: {
+    color: colors.ink,
+    fontWeight: "900"
+  },
+  lalamoveAddress: {
+    color: colors.ink,
+    marginTop: spacing.xs
+  },
+  lalamoveNote: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: spacing.sm
+  },
+  lalamoveButton: {
+    height: 46,
+    marginTop: spacing.md,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.primary
+  },
+  lalamoveButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "900"
+  },
+  lalamoveSummaryNote: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: spacing.sm
   },
   locateHint: {
     color: colors.muted,

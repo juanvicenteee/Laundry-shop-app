@@ -25,7 +25,7 @@ export const deliveryOptions: DeliveryOption[] = [
   { id: "portovita", label: "Delivery - Portovita Towers", fee: 30 },
   { id: "manhattan", label: "Delivery - Manhattan Residence", fee: 60 },
   { id: "cubao", label: "Delivery - Other Cubao area", fee: 60 },
-  { id: "outsideCubao", label: "Delivery - Outside Cubao", fee: 120 }
+  { id: "outsideCubao", label: "Delivery - Outside Cubao (LalaMove)", fee: 0 }
 ];
 
 export const defaultDeliveryOption: DeliveryOption = deliveryOptions[0]!;

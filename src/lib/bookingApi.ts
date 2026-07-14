@@ -1,4 +1,5 @@
 import { rememberPhone } from "./myRequests";
+import { detectServiceArea } from "./serviceArea";
 import { supabase } from "./supabase";
 import type { DeliveryOptionId, LaundryTypeId, PaymentMethod } from "../types";
 
@@ -61,6 +62,12 @@ export type BookingSubmission = {
 };
 
 export async function submitBookingRequest(input: BookingSubmission) {
+  // GPS is authoritative when present, matching the backend's own geofence trigger -
+  // a manually picked delivery option is only used as a fallback without GPS.
+  const place = input.coords
+    ? detectServiceArea(input.coords.latitude, input.coords.longitude)
+    : placeByDelivery[input.delivery];
+
   const payload = {
     customer_name: input.customerName.trim(),
     phone: normalizePhilippineMobile(input.phone),
@@ -70,7 +77,7 @@ export async function submitBookingRequest(input: BookingSubmission) {
     full_service: true,
     quantity: String(input.quantity),
     unit: input.laundryType === "comforter" ? "pc" : "kg",
-    place: placeByDelivery[input.delivery],
+    place,
     detergent_source: "included",
     detergent_item_id: "",
     conditioner_source: "included",

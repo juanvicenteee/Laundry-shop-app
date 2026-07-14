@@ -5,5 +5,5 @@
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true
   },
-  "exclude": ["node_modules", "Pamigay", "admin-app", "backend-updates"]
+  "exclude": ["node_modules", "Pamigay", "admin-app", "backend-updates", "customer-android"]
 }

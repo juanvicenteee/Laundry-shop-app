@@ -5,7 +5,16 @@ const tsPlugin = require("@typescript-eslint/eslint-plugin");
 module.exports = [
   ...expoConfig,
   {
-    ignores: ["node_modules/**", ".expo/**", "dist/**", "web-build/**", "Pamigay/**", "admin-app/**", "backend-updates/**"]
+    ignores: [
+      "node_modules/**",
+      ".expo/**",
+      "dist/**",
+      "web-build/**",
+      "Pamigay/**",
+      "admin-app/**",
+      "backend-updates/**",
+      "customer-android/**"
+    ]
   },
   {
     files: ["**/*.ts", "**/*.tsx"],

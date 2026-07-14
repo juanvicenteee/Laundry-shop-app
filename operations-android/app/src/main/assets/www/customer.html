@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0d83a3">
+  <title>Book a Pickup | Bubbly-fi Laundry Shop</title>
+  <link rel="icon" href="assets/logo.png">
+  <link rel="stylesheet" href="customer.css?v=2.6.11">
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+  <a class="floating-messenger" href="https://m.me/bubblyfi" target="_blank" rel="noopener" aria-label="Message Bubbly-fi on Messenger">💬 <span>Message us</span></a>
+  <header class="customer-header">
+    <a class="brand-link" href="customer.html" aria-label="Bubbly-fi customer booking">
+      <img src="assets/logo.png" alt="Bubbly-fi logo">
+      <span><strong>Bubbly-fi</strong><small>Laundry pickup booking</small></span>
+    </a>
+  </header>
+
+  <main class="booking-shell">
+    <section class="customer-hero">
+      <img src="assets/banner.png" alt="Bubbly-fi Laundry Shop">
+      <div>
+        <h1>Schedule your laundry pickup</h1>
+        <p>Select your service and products, add an optional GPS pin and photos, and pay securely through GCash.</p>
+      </div>
+    </section>
+
+    <div id="loadingCard" class="notice-card">Loading current services and prices…</div>
+    <div id="errorCard" class="notice-card error hidden"></div>
+
+    <form id="bookingForm" class="booking-layout hidden" novalidate>
+      <div class="booking-main">
+        <section class="step-card">
+          <div class="step-head"><span>1</span><div><h2>Contact details</h2><p>We will use these details to confirm pickup.</p></div></div>
+          <div class="field-grid two">
+            <label>Full name <input id="customerName" required autocomplete="name" placeholder="Juan Dela Cruz"></label>
+            <label>Mobile number <input id="phone" required autocomplete="tel" inputmode="tel" placeholder="09XXXXXXXXX or +639XXXXXXXXX" maxlength="20"></label>
+          </div>
+          <label>Email address <input id="email" type="email" autocomplete="email" placeholder="Optional"></label>
+        </section>
+
+        <section class="step-card">
+          <div class="step-head"><span>2</span><div><h2>Pickup address</h2><p>Enter the complete address. GPS is optional; when used, it automatically selects MPlace, Within Cubao, or Outside Cubao.</p></div></div>
+          <div class="field-grid two">
+            <label>Service area <small id="areaMode">Manual selection unless GPS is captured</small>
+              <select id="place" required>
+                <option value="cubao">Within Cubao</option>
+                <option value="mplace">MPlace</option>
+                <option value="outside">Outside Cubao</option>
+              </select>
+            </label>
+            <label>Unit / building <input id="buildingUnit" autocomplete="address-line1" placeholder="Unit, tower, building"></label>
+          </div>
+          <label>Street / house number <input id="addressLine" required autocomplete="address-line2" placeholder="House number and street"></label>
+          <div class="field-grid two">
+            <label>Barangay <input id="barangay" required placeholder="Barangay"></label>
+            <label>City <input id="city" required value="Quezon City" autocomplete="address-level2"></label>
+          </div>
+          <label>Landmark / pickup instructions <input id="landmark" placeholder="Gate color, lobby, nearby landmark"></label>
+          <div class="gps-box">
+            <div><strong id="gpsStatus">Optional GPS area detection</strong><small id="gpsDetails">Use GPS to automatically identify the service area, or select the area manually.</small></div>
+            <button id="captureGps" class="btn secondary" type="button">📍 Detect area with GPS</button>
+          </div>
+          <a id="mapsLink" class="maps-link hidden" target="_blank" rel="noopener">Open captured pin in Google Maps ↗</a>
+          <input id="gpsLat" type="hidden"><input id="gpsLng" type="hidden"><input id="mapsUrl" type="hidden">
+        </section>
+
+        <section class="step-card">
+          <div class="step-head"><span>3</span><div><h2>Select service</h2><p>Base prices exclude detergent, fabric conditioner, add-ons, and delivery.</p></div></div>
+          <div id="serviceChoices" class="choice-grid services"></div>
+          <div class="section-label top-gap"><h3>Laundry type / load capacity</h3><span>Select one</span></div>
+          <div id="itemTypeChoices" class="choice-grid products"></div>
+          <div class="quantity-box">
+            <button type="button" data-qty="-5">−5</button><button type="button" data-qty="-1">−1</button>
+            <div><strong id="quantityValue">8</strong><span id="quantityUnit">kg</span></div>
+            <button type="button" data-qty="1">+1</button><button type="button" data-qty="5">+5</button>
+          </div>
+          <div class="weight-verification-notice" role="note" aria-label="Weight Verification Notice">
+            <strong>Weight Verification Notice</strong>
+            <p>The weight entered during booking is an estimate only. The final billable weight will be based on the measurement recorded using Bubbly-fi Laundry Shop’s weighing scale upon receipt of the items. Any resulting price adjustment will be communicated to the customer before processing.</p>
+          </div>
+        </section>
+
+        <section id="washProductsCard" class="step-card">
+          <div class="step-head"><span>4</span><div><h2>Wash products</h2><p>Brand prices are added per load. Bring your own and None add ₱0.</p></div></div>
+          <div class="product-section">
+            <div class="section-label"><h3>Detergent</h3><span>Required for wash services</span></div>
+            <div id="detergentChoices" class="choice-grid products"></div>
+          </div>
+          <div class="product-section">
+            <div class="section-label"><h3>Fabric conditioner</h3><span>Select a brand, bring your own, or none</span></div>
+            <div id="conditionerChoices" class="choice-grid products"></div>
+          </div>
+        </section>
+
+        <section class="step-card">
+          <div class="step-head"><span>5</span><div><h2>Add-ons and delivery</h2><p>Optional services are charged per load.</p></div></div>
+          <div id="addonChoices" class="choice-grid addons"></div>
+          <div id="deliveryChoices" class="choice-grid delivery"></div>
+          <div id="lalamoveReference" class="lalamove-reference hidden">
+            <div>
+              <strong>Bubbly-fi pickup/drop-off reference</strong>
+              <p id="shopAddressText">92 14th Ave, Cubao, Quezon City, Philippines, 1109</p>
+              <small>LalaMove fee is quoted and paid separately and is not included in your Bubbly-fi total.</small>
+            </div>
+            <div class="lalamove-actions">
+              <a class="btn secondary" href="https://www.google.com/maps/place/Bubbly-fi+Laundry+Shop/@14.6175619,121.0598714,17z/data=!3m1!4b1!4m6!3m5!1s0x3397b7bf45a5e511:0xcaf794aa49c5e574!8m2!3d14.6175619!4d121.0598714!16s%2Fg%2F11y03v4mqt?entry=ttu" target="_blank" rel="noopener">📍 View shop map</a>
+              <button id="openLalamove" class="btn primary" type="button">🛵 Copy address & open LalaMove</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="step-card">
+          <div class="step-head"><span>6</span><div><h2>Laundry items and pickup schedule</h2><p>Help our rider identify your pickup and laundry bags.</p></div></div>
+          <label>Describe the items <textarea id="itemDescription" required rows="4" placeholder="Example: 2 laundry bags, mostly shirts and pants, one bedsheet"></textarea></label>
+          <div class="field-grid three">
+            <label>Approx. item count <input id="itemCount" type="number" min="0" step="1" placeholder="Optional"></label>
+            <label>Number of bags <input id="bagsCount" type="number" min="0" step="1" value="1"></label>
+            <label>Preferred pickup <input id="pickupAt" type="datetime-local" required></label>
+          </div>
+          <label>Additional notes <textarea id="customerNotes" rows="3" placeholder="Delicate items, stains, preferred contact time, etc."></textarea></label>
+
+          <div class="upload-grid">
+            <label class="upload-card">
+              <span>📍 Pickup point photo <em>(optional)</em></span><small>Choose an existing photo from your gallery or files</small>
+              <input id="pickupPhoto" type="file" accept="image/*">
+              <img id="pickupPreview" class="preview hidden" alt="Pickup point preview">
+            </label>
+            <label class="upload-card">
+              <span>🧺 Laundry item photos <em>(optional)</em></span><small>Choose up to 5 existing photos from your gallery or files</small>
+              <input id="itemPhotos" type="file" accept="image/*" multiple>
+              <div id="itemPreviews" class="preview-grid"></div>
+            </label>
+          </div>
+        </section>
+
+        <section class="step-card payment-card">
+          <div class="step-head"><span>7</span><div><h2>Pay through GCash</h2><p>Scan the QR code and pay the total shown in the order summary.</p></div></div>
+          <div class="gcash-layout">
+            <img src="assets/gcash.jpg" alt="Bubbly-fi GCash payment QR code" class="gcash-image">
+            <div class="payment-fields">
+              <div class="payment-total"><span>Amount to pay</span><strong id="paymentTotal">₱0</strong></div>
+              <label>GCash reference number <input id="paymentReference" required inputmode="numeric" placeholder="Enter the reference number"></label>
+              <label class="upload-card compact">
+                <span>Payment screenshot</span><small>Choose your saved GCash screenshot from Photos or Files</small>
+                <input id="paymentProof" type="file" accept="image/*" required>
+                <img id="paymentPreview" class="preview hidden" alt="Payment proof preview">
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="step-card consent-card">
+          <label class="check-line"><input id="consent" type="checkbox" required><span>I confirm that the information, pickup address, any optional photos, and GCash payment details are correct. I allow Bubbly-fi to contact me about this booking.</span></label>
+        </section>
+      </div>
+
+      <aside class="order-summary">
+        <div class="summary-logo"><img src="assets/logo.png" alt="Bubbly-fi"><div><strong>Your booking</strong><span>Live price calculation</span></div></div>
+        <div class="summary-lines">
+          <div><span>Service</span><strong id="summaryService">—</strong></div>
+          <div><span>Quantity</span><strong id="summaryQuantity">—</strong></div>
+          <div><span>Loads</span><strong id="summaryLoads">—</strong></div>
+          <div><span>Area</span><strong id="summaryPlace">—</strong></div>
+          <div><span>Base service</span><strong id="summaryBase">₱0</strong></div>
+          <div><span>Detergent</span><strong id="summaryDetergent">₱0</strong></div>
+          <div><span>Fabric conditioner</span><strong id="summaryConditioner">₱0</strong></div>
+          <div><span>Add-ons</span><strong id="summaryAddons">₱0</strong></div>
+          <div><span>Delivery</span><strong id="summaryDelivery">₱0</strong></div>
+          <p class="delivery-note">Outside Cubao: LalaMove fee is quoted and paid separately, so it is not included in the displayed total.</p>
+        </div>
+        <div class="grand-total"><span>Total</span><strong id="summaryTotal">₱0</strong></div>
+        <p class="formula">Base service + detergent + fabric conditioner + add-ons + delivery</p>
+        <div class="weight-verification-notice summary-weight-notice" role="note" aria-label="Weight Verification Notice">
+          <strong>Weight Verification Notice</strong>
+          <p>The weight entered during booking is an estimate only. The final billable weight will be based on the measurement recorded using Bubbly-fi Laundry Shop’s weighing scale upon receipt of the items. Any resulting price adjustment will be communicated to the customer before processing.</p>
+        </div>
+        <button id="submitBooking" class="btn primary full big" type="submit">Submit paid booking</button>
+        <div id="submitStatus" class="submit-status"></div>
+      </aside>
+    </form>
+
+    <section id="successCard" class="success-card hidden">
+      <img src="assets/logo.png" alt="Bubbly-fi">
+      <h2>Booking submitted!</h2>
+      <p>Your request number is <strong id="successRequestNo"></strong>.</p>
+      <p>We will verify your GCash payment and contact you to confirm the pickup schedule.</p>
+      <div class="success-total">Submitted total: <strong id="successTotal"></strong></div>
+      <p id="smsConfirmationStatus" class="sms-confirmation-status">Sending booking notifications…</p>
+      <div class="success-actions">
+        <a class="btn messenger-btn" href="https://m.me/bubblyfi" target="_blank" rel="noopener">💬 Message Bubbly-fi on Messenger</a>
+        <button id="newBooking" class="btn primary" type="button">Create another booking</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>© Bubbly-fi Laundry Shop · Customer pickup booking</footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="customer-v2.6.8.js?v=2.6.8"></script>
+</body>
+</html>

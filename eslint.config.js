@@ -13,7 +13,8 @@ module.exports = [
       "Pamigay/**",
       "admin-app/**",
       "backend-updates/**",
-      "customer-android/**"
+      "customer-android/**",
+      "operations-android/**"
     ]
   },
   {

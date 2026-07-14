@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0d7f9e">
+  <title>Bubbly-fi POS v2.6.12</title>
+  <link rel="icon" href="assets/logo.png">
+  <link rel="stylesheet" href="style.css?v=2.6.11">
+</head>
+<body>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <section id="loginView" class="login-shell">
+    <div class="login-card">
+      <img src="assets/banner.png" alt="Bubbly-fi Laundry Shop" class="login-banner">
+      <div class="login-body">
+        <img src="assets/logo.png" alt="Bubbly-fi logo" class="login-logo">
+        <h1>Bubbly-fi POS</h1>
+        <p class="muted">Cloud-connected laundry operations</p>
+        <form id="loginForm" autocomplete="on">
+          <label>Username
+            <input id="loginUsername" autocomplete="username" required placeholder="admin or operator">
+          </label>
+          <label>Password
+            <input id="loginPassword" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="btn primary full" type="submit">Sign in</button>
+          <a class="btn secondary full login-book-link" href="customer.html">Customer pickup booking</a>
+        </form>
+        <p id="loginMessage" class="form-message"></p>
+      </div>
+    </div>
+  </section>
+
+  <div id="appView" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/logo.png" alt="Bubbly-fi">
+        <div><strong>Bubbly-fi</strong><span>Cloud POS v2.6.12</span></div>
+      </div>
+      <nav id="nav" class="nav">
+        <button data-page="dashboard" class="active">📊 Dashboard</button>
+        <button data-page="pos">➕ New Order</button>
+        <button data-page="orders">🧺 Orders</button>
+        <button data-page="requests" id="requestNavButton" class="request-nav-button">📥 Customer Requests <span id="requestNavBadge" class="nav-badge hidden">0</span></button>
+        <button data-page="customers">👥 Customers</button>
+        <button data-page="inventory">📦 Inventory</button>
+        <button data-page="settings" data-admin-only>⚙️ Controls</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div id="connectionBadge" class="connection online">● Online</div>
+        <div class="user-block"><strong id="currentUserName">—</strong><span id="currentUserRole">—</span></div>
+        <a class="btn secondary full customer-page-link" href="customer.html" target="_blank" rel="noopener">Open customer page</a>
+        <button id="logoutBtn" class="btn ghost full">Log out</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p id="pageSubtitle" class="muted">Live business overview</p>
+        </div>
+        <div class="topbar-actions">
+          <button id="enableNotificationsBtn" class="btn secondary alert-enable hidden" type="button">🔔 Enable Filipino voice alerts</button>
+          <button id="requestAlertBtn" class="request-alert-btn" type="button" aria-label="Open customer requests">
+            <span class="request-alert-icon">🔔</span><span>Requests</span><strong id="requestAlertBadge">0</strong>
+          </button>
+          <div class="save-indicator" id="saveIndicator">Cloud ready</div>
+        </div>
+      </header>
+
+      <section id="page-dashboard" class="page active">
+        <div class="hero"><img src="assets/banner.png" alt="Bubbly-fi Laundry Shop"></div>
+        <div id="kpiGrid" class="kpi-grid"></div>
+        <div class="dashboard-grid">
+          <article class="panel"><div class="panel-head"><h2>Sales by customer</h2><span>This month</span></div><div id="salesByCustomer" class="rank-list"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Sales by place</h2><span>This month</span></div><div id="salesByPlace" class="rank-list"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Sales by service</h2><span>This month</span></div><div id="salesByService" class="rank-list"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Sales by weekday</h2><span>This month</span></div><div id="salesByWeekday" class="bar-list"></div></article>
+          <article class="panel request-notification-panel"><div class="panel-head"><div><h2>New customer requests</h2><span>Live booking alerts</span></div><button id="openRequestsBtn" class="btn secondary compact" type="button">Open queue</button></div><div id="newRequestList" class="rank-list"></div></article>
+          <article class="panel"><div class="panel-head"><h2>Orders needing attention</h2><span>Live</span></div><div id="attentionList" class="rank-list"></div></article>
+        </div>
+      </section>
+
+      <section id="page-pos" class="page">
+        <div class="pos-layout">
+          <div class="pos-main">
+            <article class="panel">
+              <div class="step-title"><span>1</span><div><h2>Customer</h2><p>Select or add customer</p></div></div>
+              <div class="search-row"><input id="customerSearch" placeholder="Search customer name or phone"><button id="newCustomerQuick" class="btn secondary">+ New</button></div>
+              <div id="customerChips" class="choice-grid customer-grid"></div>
+            </article>
+
+            <article class="panel">
+              <div class="step-title"><span>2</span><div><h2>Service</h2><p>Select the base service. Detergent, conditioner, add-ons, and delivery are added separately.</p></div></div>
+              <div id="serviceChoices" class="choice-grid services"></div>
+              <div class="product-heading top-gap"><h3>Laundry type / load capacity</h3><span class="required-badge neutral">Select one</span></div>
+              <div id="itemTypeChoices" class="choice-grid four"></div>
+            </article>
+
+            <article class="panel">
+              <div class="step-title"><span>3</span><div><h2>Place and delivery</h2><p>Price updates automatically</p></div></div>
+              <div id="placeChoices" class="choice-grid three"></div>
+              <div id="deliveryChoices" class="choice-grid two top-gap"></div>
+            </article>
+
+            <article class="panel">
+              <div class="step-title"><span>4</span><div><h2>Service options</h2><p>Add extra cycles or warm/hot wash</p></div></div>
+              <div id="addonChoices" class="choice-grid three addon-grid"></div>
+            </article>
+
+            <article class="panel" id="washProductsPanel">
+              <div class="step-title"><span>5</span><div><h2>Wash products</h2><p>Choose a shop brand, Bring your own, or None for conditioner</p></div></div>
+              <div class="wash-product-group">
+                <div class="product-heading"><h3>Detergent</h3><span class="required-badge">Select one</span></div>
+                <div id="detergentChoices" class="choice-grid product-grid"></div>
+              </div>
+              <div class="wash-product-group top-gap">
+                <div class="product-heading"><h3>Fabric conditioner</h3><span class="required-badge neutral">Select one or None</span></div>
+                <div id="conditionerChoices" class="choice-grid product-grid"></div>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="step-title"><span>6</span><div><h2>Quantity and payment</h2><p>Minimal taps</p></div></div>
+              <div class="quantity-box"><button data-qty="-5">−5</button><button data-qty="-1">−1</button><div><strong id="qtyValue">8</strong><span id="qtyUnit">kg</span></div><button data-qty="1">+1</button><button data-qty="5">+5</button></div>
+              <div id="paymentChoices" class="choice-grid payments top-gap"></div>
+              <div class="two-fields top-gap"><label>Status<select id="orderStatus"><option>Received</option><option>Washing</option><option>Drying</option><option>Ready</option><option>Claimed</option></select></label><label>Pickup date & time<input id="pickupAt" type="datetime-local"></label></div>
+              <label class="top-gap">Notes<input id="orderNotes" placeholder="Special instructions"></label>
+            </article>
+          </div>
+
+          <aside class="panel order-summary">
+            <h2>Order summary</h2>
+            <div id="summaryCustomer" class="summary-customer">Walk-in Customer</div>
+            <div class="summary-lines">
+              <div><span>Service</span><strong id="summaryService">Wash + Dry + Fold</strong></div>
+              <div><span>Quantity</span><strong id="summaryQty">8 kg</strong></div>
+              <div><span>Loads</span><strong id="summaryLoads">1</strong></div>
+              <div><span>Place</span><strong id="summaryPlace">Cubao</strong></div>
+              <div><span>Rate</span><strong id="summaryRate">₱165</strong></div>
+              <div><span>Add-ons</span><strong id="summaryAddons">₱0</strong></div>
+              <div><span>Delivery</span><strong id="summaryDelivery">₱0</strong></div>
+              <div><span>Detergent & conditioner</span><strong id="summaryProductAdjustment">₱0</strong></div>
+              <div><span>Detergent</span><strong id="summaryDetergent">Not selected</strong></div>
+              <div><span>Conditioner</span><strong id="summaryConditioner">Not selected</strong></div>
+            </div>
+            <div class="total-row"><span>Total</span><strong id="summaryTotal">₱165</strong></div>
+            <button id="saveOrderBtn" class="btn primary full big">Save order</button>
+            <button id="resetOrderBtn" class="btn ghost full">Reset</button>
+          </aside>
+        </div>
+      </section>
+
+      <section id="page-orders" class="page">
+        <article class="panel">
+          <div class="panel-head actions-head"><div><h2>Orders</h2><span>Cloud-synchronized</span></div><div class="filters"><input id="orderSearch" placeholder="Search customer, receipt, status"><select id="orderStatusFilter"><option value="all">All statuses</option><option>Received</option><option>Washing</option><option>Drying</option><option>Ready</option><option>Claimed</option></select></div></div>
+          <div class="table-wrap"><table><thead><tr><th>Date & time</th><th>Receipt</th><th>Customer</th><th>Service</th><th>Place</th><th>Options</th><th>Wash products</th><th>Status</th><th>Payment</th><th>Total</th><th></th></tr></thead><tbody id="ordersBody"></tbody></table></div>
+        </article>
+      </section>
+
+
+      <section id="page-requests" class="page">
+        <article class="panel">
+          <div class="panel-head actions-head"><div><h2>Customer pickup requests</h2><span>Submitted from the public booking page</span></div><div class="filters"><input id="requestSearch" placeholder="Search request, customer, phone, address"><select id="requestStatusFilter"><option value="all">All statuses</option><option>Pending</option><option>Confirmed</option><option>Scheduled</option><option>Collected</option><option>Rejected</option><option>Converted</option></select></div></div>
+          <div class="request-note"><strong>Public booking link:</strong> <a href="customer.html" target="_blank" rel="noopener">customer.html</a> · Photos are private and open through temporary signed links.</div>
+          <div class="table-wrap"><table class="requests-table"><thead><tr><th>Date & time</th><th>Request</th><th>Customer</th><th>Service</th><th>Pickup</th><th>Items & photos</th><th>GCash</th><th>Total</th><th>Order</th><th>Status</th></tr></thead><tbody id="requestsBody"></tbody></table></div>
+        </article>
+      </section>
+
+      <section id="page-customers" class="page">
+        <div class="split-layout">
+          <article class="panel"><div class="panel-head"><h2>Customers</h2><span>Shared cloud records</span></div><div class="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Place</th><th>Orders</th><th>Total spent</th><th></th></tr></thead><tbody id="customersBody"></tbody></table></div></article>
+          <aside class="panel"><h2 id="customerFormTitle">Add customer</h2><form id="customerForm"><input id="customerId" type="hidden"><label>Name<input id="customerName" required></label><label>Phone<input id="customerPhone"></label><label>Default place<select id="customerPlace"><option value="cubao">Cubao</option><option value="mplace">MPlace</option><option value="outside">Outside Cubao</option></select></label><label>Notes<textarea id="customerNotes" rows="3"></textarea></label><button class="btn primary full" type="submit">Save customer</button><button class="btn ghost full" type="button" id="clearCustomerBtn">Clear</button></form></aside>
+        </div>
+      </section>
+
+      <section id="page-inventory" class="page">
+        <div class="split-layout">
+          <article class="panel"><div class="panel-head"><h2>Inventory</h2><span>Low stock highlighted</span></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Category</th><th>Stock</th><th>Reorder</th><th>Unit cost</th><th>Customer price/load</th><th>Usage/load</th><th>Status</th><th></th></tr></thead><tbody id="inventoryBody"></tbody></table></div></article>
+          <aside class="panel"><h2 id="inventoryFormTitle">Add item</h2><form id="inventoryForm"><input id="inventoryId" type="hidden"><label>Item name<input id="inventoryName" required></label><label>Category<select id="inventoryCategory"><option>Detergent</option><option>Fabric conditioner</option><option>Packaging</option><option>Maintenance</option><option>Other</option></select></label><div class="two-fields"><label>Stock<input id="inventoryStock" type="number" min="0" step="0.1" required></label><label>Reorder level<input id="inventoryReorder" type="number" min="0" step="0.1" required></label></div><label>Unit cost<input id="inventoryCost" type="number" min="0" step="0.01" required></label><label id="inventoryCustomerPriceLabel">Customer price per load<input id="inventoryCustomerPrice" type="number" min="0" step="0.01" value="10"><small>Admin-controlled. Used for detergent and conditioner brands.</small></label><label>Inventory usage per load<input id="inventoryConsumption" type="number" min="0" step="0.01" value="1" required><small>Quantity deducted from stock for each laundry load.</small></label><button class="btn primary full" type="submit">Save item</button><button class="btn ghost full" type="button" id="clearInventoryBtn">Clear</button></form></aside>
+        </div>
+      </section>
+
+      <section id="page-settings" class="page">
+        <article class="panel settings-panel">
+          <div class="panel-head"><div><h2>Pricing controls</h2><span>Admin only; changes save automatically</span></div></div>
+          <form id="settingsForm" class="settings-grid service-settings-grid">
+            <p class="pricing-formula-note"><strong>Final price formula:</strong> Base service + detergent + fabric conditioner + selected add-ons + delivery.</p>
+
+            <div class="settings-group-title">Wash</div>
+            <label>Within Cubao<input id="priceWashCubao" type="number" min="0"></label>
+            <label>MPlace<input id="priceWashMplace" type="number" min="0"></label>
+            <label>Outside Cubao <small>Same as Within Cubao</small><input id="priceWashOutside" type="number" min="0" readonly aria-readonly="true"></label>
+            <label>Capacity (kg/load)<input id="capacityWash" type="number" min="1" step="0.5"></label>
+
+            <div class="settings-group-title">Wash + Dry</div>
+            <label>Within Cubao<input id="priceWdoCubao" type="number" min="0"></label>
+            <label>MPlace<input id="priceWdoMplace" type="number" min="0"></label>
+            <label>Outside Cubao <small>Same as Within Cubao</small><input id="priceWdoOutside" type="number" min="0" readonly aria-readonly="true"></label>
+            <label>Capacity (kg/load)<input id="capacityWdo" type="number" min="1" step="0.5"></label>
+
+            <div class="settings-group-title">Wash + Dry + Fold</div>
+            <label>Within Cubao<input id="priceWdfCubao" type="number" min="0"></label>
+            <label>MPlace<input id="priceWdfMplace" type="number" min="0"></label>
+            <label>Outside Cubao <small>Same as Within Cubao</small><input id="priceWdfOutside" type="number" min="0" readonly aria-readonly="true"></label>
+            <label>Capacity (kg/load)<input id="capacityWdf" type="number" min="1" step="0.5"></label>
+
+            <div class="settings-group-title">Wash Only</div>
+            <label>Within Cubao<input id="priceWashOnlyCubao" type="number" min="0"></label>
+            <label>MPlace<input id="priceWashOnlyMplace" type="number" min="0"></label>
+            <label>Outside Cubao <small>Same as Within Cubao</small><input id="priceWashOnlyOutside" type="number" min="0" readonly aria-readonly="true"></label>
+            <label>Capacity (kg/load)<input id="capacityWashOnly" type="number" min="1" step="0.5"></label>
+
+            <div class="settings-group-title">Dry Only</div>
+            <label>Within Cubao<input id="priceDryOnlyCubao" type="number" min="0"></label>
+            <label>MPlace<input id="priceDryOnlyMplace" type="number" min="0"></label>
+            <label>Outside Cubao <small>Same as Within Cubao</small><input id="priceDryOnlyOutside" type="number" min="0" readonly aria-readonly="true"></label>
+            <label>Capacity (kg/load)<input id="capacityDryOnly" type="number" min="1" step="0.5"></label>
+
+            <div class="settings-group-title">Fold Only</div>
+            <label>Within Cubao<input id="priceFoldOnlyCubao" type="number" min="0"></label>
+            <label>MPlace<input id="priceFoldOnlyMplace" type="number" min="0"></label>
+            <label>Outside Cubao <small>Same as Within Cubao</small><input id="priceFoldOnlyOutside" type="number" min="0" readonly aria-readonly="true"></label>
+            <label>Capacity (kg/load)<input id="capacityFoldOnly" type="number" min="1" step="0.5"></label>
+
+            <div class="settings-group-title">Service add-ons</div>
+            <label>Extra dry per load<input id="addonExtraDry" type="number" min="0"></label>
+            <label>Extra wash per load<input id="addonExtraWash" type="number" min="0"></label>
+            <label>Warm / hot wash per load<input id="addonWarmHotWash" type="number" min="0"></label>
+            <label>Zonrox Color Safe 30 ml per load<input id="addonZonroxColorsafe" type="number" min="0" step="0.01"></label>
+
+            <div class="settings-group-title">Default wash-product prices</div>
+            <label>Default detergent price per load<input id="defaultDetergentPrice" type="number" min="0" step="0.01"></label>
+            <label>Default conditioner price per load<input id="defaultConditionerPrice" type="number" min="0" step="0.01"></label>
+            <label>Full Service discount per load<input id="fullServiceDiscount" type="number" min="0" step="0.01"></label>
+            <p class="settings-help">These defaults are used for newly added detergent or conditioner brands. Each brand can have its own customer price in Inventory. Bring your own and None add ₱0.</p>
+
+            <div class="settings-group-title">Pickup & delivery</div>
+            <label>Within Cubao two-way pickup & delivery<input id="deliveryStandard" type="number" min="0"></label>
+            <label>MPlace two-way pickup & delivery<input id="deliveryMplace" type="number" min="0"></label>
+            <p class="settings-help"><strong>Outside Cubao:</strong> Service prices automatically follow Within Cubao rates. Pickup/delivery is handled by LalaMove only, and the LalaMove charge is quoted and paid separately—not included in the POS or customer booking total.</p>
+          </form>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <div id="newRequestPopup" class="new-request-popup hidden" role="alert" aria-live="assertive">
+    <div class="new-request-popup-icon">📥</div>
+    <div class="new-request-popup-copy"><strong>New customer request</strong><span id="newRequestPopupText">A new booking has arrived.</span></div>
+    <button id="viewNewRequestBtn" class="btn primary compact" type="button">View</button>
+    <button id="dismissNewRequestBtn" class="popup-close" type="button" aria-label="Dismiss">×</button>
+  </div>
+
+  <dialog id="confirmDialog"><form method="dialog"><h3 id="confirmTitle">Confirm</h3><p id="confirmText"></p><div class="dialog-actions"><button value="cancel" class="btn ghost">Cancel</button><button value="confirm" class="btn danger">Confirm</button></div></form></dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" data-cfasync="false"></script>
+  <script src="app-v2.6.12.js?v=2.6.11" data-cfasync="false"></script>
+</body>
+</html>

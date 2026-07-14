@@ -264,6 +264,45 @@ function validateBooking() {
   return true;
 }
 
+const NOTIF_PREF_KEY = 'bubblyfi-notif-prefs';
+function loadNotifPrefs() {
+  try { return { sound: true, vibrate: true, ...JSON.parse(localStorage.getItem(NOTIF_PREF_KEY) || '{}') }; }
+  catch { return { sound: true, vibrate: true }; }
+}
+function saveNotifPrefs(prefs) {
+  try { localStorage.setItem(NOTIF_PREF_KEY, JSON.stringify(prefs)); } catch {}
+  window.AndroidBridge?.setNotificationPrefs?.(prefs.sound, prefs.vibrate);
+}
+async function upsertDevice(phone, fcmToken) {
+  if (!fcmToken) return;
+  const prefs = loadNotifPrefs();
+  try {
+    await sb.rpc('upsert_customer_device', { p_phone: phone, p_fcm_token: fcmToken, p_sound: prefs.sound, p_vibration: prefs.vibrate });
+  } catch (error) {
+    console.warn('Could not register this device for push notifications:', error);
+  }
+}
+function registerDeviceForPush(phone) {
+  if (!window.AndroidBridge?.getFcmToken) return;
+  window.onFcmToken = token => { if (token) { state.lastFcmToken = token; upsertDevice(phone, token); } };
+  window.AndroidBridge.getFcmToken();
+}
+function renderNotifSettings(phone) {
+  const box = $('#notifSettings');
+  if (!box) return;
+  const prefs = loadNotifPrefs();
+  box.classList.remove('hidden');
+  $('#notifSound').checked = prefs.sound;
+  $('#notifVibrate').checked = prefs.vibrate;
+  const update = () => {
+    const next = { sound: $('#notifSound').checked, vibrate: $('#notifVibrate').checked };
+    saveNotifPrefs(next);
+    upsertDevice(phone, state.lastFcmToken);
+  };
+  $('#notifSound').onchange = update;
+  $('#notifVibrate').onchange = update;
+}
+
 async function sendBookingNotifications(requestNo) {
   const status = $('#smsConfirmationStatus');
   try {
@@ -328,6 +367,8 @@ async function submitBooking(event) {
     $('#successCard').classList.remove('hidden');
     window.scrollTo({ top:0, behavior:'smooth' });
     sendBookingNotifications(data.request_no);
+    renderNotifSettings(payload.phone);
+    registerDeviceForPush(payload.phone);
   } catch (error) {
     console.error(error);
     const message = error?.message || explainSupabaseError(error, submitStage);

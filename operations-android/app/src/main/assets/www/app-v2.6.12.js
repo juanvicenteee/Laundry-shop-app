@@ -293,6 +293,37 @@ function notifyNewCustomerRequest(request) {
     browserNotice.onclick = () => { window.focus(); openRequestQueue(request.id); browserNotice.close(); };
   }
 }
+function registerStaffDeviceForPush() {
+  if (!window.AndroidBridge?.getFcmToken) return;
+  window.onFcmToken = async token => {
+    if (!token) return;
+    try { await sb.rpc('upsert_staff_push_token', { p_fcm_token: token }); }
+    catch (error) { console.warn('Could not register this device for push notifications:', error); }
+  };
+  window.AndroidBridge.getFcmToken();
+}
+async function notifyRiderApproaching(orderId, buttonEl) {
+  if (!navigator.geolocation) { toast('GPS is not available on this device.'); return; }
+  if (buttonEl) buttonEl.disabled = true;
+  navigator.geolocation.getCurrentPosition(async position => {
+    try {
+      const { data, error } = await sb.rpc('notify_rider_approaching', {
+        p_order_id: orderId,
+        p_rider_lat: position.coords.latitude,
+        p_rider_lng: position.coords.longitude
+      });
+      if (error) throw error;
+      toast(data?.distance_m != null ? `Customer notified · ${Math.round(data.distance_m)} m away` : 'Customer notified.');
+    } catch (error) {
+      toast(error.message || 'Could not notify the customer.');
+    } finally {
+      if (buttonEl) buttonEl.disabled = false;
+    }
+  }, error => {
+    toast(`Could not read GPS: ${error.message}`);
+    if (buttonEl) buttonEl.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
 async function enableBookingAlerts() {
   try {
     state.soundVoiceEnabled = true;
@@ -563,6 +594,7 @@ async function initializeSession(session) {
     await loadCloudData();
     showApp();
     subscribeRealtime();
+    registerStaffDeviceForPush();
   } catch (e) {
     console.error(e); $('#loginMessage').textContent = e.message; await sb.auth.signOut(); showLogin();
   }
@@ -780,7 +812,7 @@ function renderOrders(){
     const statusCell=voided?`<span class="pill unpaid">VOID</span>`:`<select class="inline-status" data-order-status-id="${o.id}">${['Received','Washing','Drying','Ready','Claimed'].map(x=>`<option ${o.status===x?'selected':''}>${x}</option>`).join('')}</select>`;
     const actions=voided
       ? `<span class="small">${escapeHtml(o.void_reason||'Voided')}</span>`
-      : `<button data-toggle-paid="${o.id}">${o.payment_status==='Paid'?'Unpay':'Pay'}</button>${isAdmin()&&inventoryDeductionNeedsRepair(o)?`<button data-repair-inventory="${o.id}">Repair stock</button>`:''}${isAdmin()?`<button class="danger-action" data-void-order="${o.id}">Void</button>`:''}`;
+      : `<button data-toggle-paid="${o.id}">${o.payment_status==='Paid'?'Unpay':'Pay'}</button>${o.status==='Ready'?`<button data-notify-rider="${o.id}">📍 On my way</button>`:''}${isAdmin()&&inventoryDeductionNeedsRepair(o)?`<button data-repair-inventory="${o.id}">Repair stock</button>`:''}${isAdmin()?`<button class="danger-action" data-void-order="${o.id}">Void</button>`:''}`;
     const includesWash=serviceIncludesWash(o.service_type,o.extra_wash);
     const recordedProductTotal=Number(o.wash_product_total ?? o.wash_product_adjustment) || 0;
     const washProducts=includesWash?`<div class="wash-products-cell"><strong>🧴 ${escapeHtml(o.detergent_name||'Not recorded')} · ${peso.format(Number(o.detergent_price_per_load)||0)}/load</strong><span>🌸 ${escapeHtml(o.conditioner_name||'Not recorded')} · ${peso.format(Number(o.conditioner_price_per_load)||0)}/load</span><span class="price-detail">Products: ${peso.format(recordedProductTotal)}</span></div>`:`<span class="small">Not required</span>`;
@@ -996,7 +1028,7 @@ function bindEvents(){
     }
   });
   $('#ordersBody').addEventListener('change',e=>{if(e.target.matches('[data-order-status-id]')){const o=state.orders.find(x=>x.id===e.target.dataset.orderStatusId);if(!o?.is_void)updateOrder(e.target.dataset.orderStatusId,{status:e.target.value},'status_change');}});
-  $('#ordersBody').addEventListener('click',async e=>{const pay=e.target.dataset.togglePaid,voidId=e.target.dataset.voidOrder,repairId=e.target.dataset.repairInventory;if(repairId){await repairOrderInventory(repairId);return;}if(pay){const o=state.orders.find(x=>x.id===pay);if(o?.is_void)return;await updateOrder(pay,{payment_status:o.payment_status==='Paid'?'Unpaid':'Paid'},'payment_change');}if(voidId){if(!isAdmin())return toast('Only Admin can void orders.');const reason=prompt('Reason for voiding this order:','Customer cancelled');if(!reason?.trim())return;const ok=await confirmAction('Void order','The order remains in history and cannot be used in sales totals.');if(!ok)return;const patch={is_void:true,void_reason:reason.trim(),voided_at:new Date().toISOString(),voided_by:state.profile.id,updated_by:state.profile.id};const{error}=await sb.from('orders').update(patch).eq('id',voidId);if(error)toast(error.message);else{await logAction('order_voided','order',voidId,{reason:reason.trim()});toast('Order voided');await loadCloudData();renderAll();}}});
+  $('#ordersBody').addEventListener('click',async e=>{const pay=e.target.dataset.togglePaid,voidId=e.target.dataset.voidOrder,repairId=e.target.dataset.repairInventory,notifyId=e.target.dataset.notifyRider;if(notifyId){await notifyRiderApproaching(notifyId,e.target);return;}if(repairId){await repairOrderInventory(repairId);return;}if(pay){const o=state.orders.find(x=>x.id===pay);if(o?.is_void)return;await updateOrder(pay,{payment_status:o.payment_status==='Paid'?'Unpaid':'Paid'},'payment_change');}if(voidId){if(!isAdmin())return toast('Only Admin can void orders.');const reason=prompt('Reason for voiding this order:','Customer cancelled');if(!reason?.trim())return;const ok=await confirmAction('Void order','The order remains in history and cannot be used in sales totals.');if(!ok)return;const patch={is_void:true,void_reason:reason.trim(),voided_at:new Date().toISOString(),voided_by:state.profile.id,updated_by:state.profile.id};const{error}=await sb.from('orders').update(patch).eq('id',voidId);if(error)toast(error.message);else{await logAction('order_voided','order',voidId,{reason:reason.trim()});toast('Order voided');await loadCloudData();renderAll();}}});
   $('#customerForm').addEventListener('submit',saveCustomer);$('#clearCustomerBtn').addEventListener('click',clearCustomerForm);
   $('#customersBody').addEventListener('click',async e=>{const edit=e.target.dataset.editCustomer,archive=e.target.dataset.archiveCustomer;if(edit){const c=state.customers.find(x=>x.id===edit);$('#customerId').value=c.id;$('#customerName').value=c.name;$('#customerPhone').value=c.phone||'';$('#customerPlace').value=c.default_place||'cubao';$('#customerNotes').value=c.notes||'';$('#customerFormTitle').textContent='Edit customer';}if(archive){if(!isAdmin())return toast('Only Admin can archive customers.');const c=state.customers.find(x=>x.id===archive);const next=!c.is_archived;const{error}=await sb.from('customers').update({is_archived:next,updated_by:state.profile.id}).eq('id',archive);if(error)toast(error.message);else{await logAction(next?'customer_archived':'customer_restored','customer',archive,{});toast(next?'Customer archived':'Customer restored');await loadCloudData();renderAll();}}});
   $('#inventoryForm').addEventListener('submit',saveInventory);$('#clearInventoryBtn').addEventListener('click',clearInventoryForm);$('#inventoryCategory').addEventListener('change',()=>updateInventoryPriceField(true));

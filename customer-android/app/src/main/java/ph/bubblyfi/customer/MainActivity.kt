@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.speech.tts.TextToSpeech
@@ -31,6 +32,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
+import com.google.firebase.FirebaseApp
+import com.google.firebase.messaging.FirebaseMessaging
 import java.util.Locale
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
@@ -74,6 +77,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         }
     }
 
+    private val notificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* no-op: JS reads current status lazily via getFcmToken() */ }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -85,6 +92,12 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         textToSpeech = TextToSpeech(this, this)
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         assetLoader = WebViewAssetLoader.Builder()
             .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
@@ -264,6 +277,29 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         fun openExternalUrl(url: String?) {
             val uri = url?.let(Uri::parse) ?: return
             runOnUiThread { openExternal(uri) }
+        }
+
+        @JavascriptInterface
+        fun getFcmToken() {
+            if (FirebaseApp.getApps(this@MainActivity).isEmpty()) {
+                runOnUiThread { webView.evaluateJavascript("window.onFcmToken && window.onFcmToken(null)", null) }
+                return
+            }
+            FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                val token = if (task.isSuccessful) task.result else null
+                runOnUiThread {
+                    val jsToken = token?.let { "\"${it.replace("\"", "")}\"" } ?: "null"
+                    webView.evaluateJavascript("window.onFcmToken && window.onFcmToken($jsToken)", null)
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun setNotificationPrefs(sound: Boolean, vibrate: Boolean) {
+            getSharedPreferences(BubblyfiMessagingService.PREFS, MODE_PRIVATE).edit()
+                .putBoolean(BubblyfiMessagingService.KEY_SOUND, sound)
+                .putBoolean(BubblyfiMessagingService.KEY_VIBRATE, vibrate)
+                .apply()
         }
     }
 }

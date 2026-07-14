@@ -11,6 +11,14 @@ if (signingFile.exists()) signingFile.inputStream().use(signingProperties::load)
 val signingReady = listOf("storeFile", "storePassword", "keyAlias", "keyPassword")
     .all { signingProperties.getProperty(it)?.isNotBlank() == true }
 
+// google-services.json is safe-to-commit client config (not a secret), but CI and fresh
+// clones won't have it until Firebase project setup is done — apply the plugin only when
+// the file is present so the build never fails on its absence.
+val hasGoogleServices = file("google-services.json").exists()
+if (hasGoogleServices) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "ph.bubblyfi.operations"
     compileSdk = 35
@@ -67,4 +75,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.webkit:webkit:1.12.1")
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 }

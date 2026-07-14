@@ -16,3 +16,8 @@
 .weight-verification-notice p{margin:0;font-size:.86rem}
 .summary-weight-notice{margin:14px 0 12px;padding:12px 13px;border-radius:10px}
 .summary-weight-notice p{font-size:.78rem}
+
+.notif-settings{margin:14px 0;padding:12px 14px;border-radius:10px;background:#f2fbff;border:1px solid #cfeefc;display:flex;flex-wrap:wrap;align-items:center;gap:14px}
+.notif-settings strong{width:100%;font-size:.9rem;color:#0d5a70}
+.switch-line{display:flex;align-items:center;gap:6px;font-size:.85rem;color:#0d5a70;cursor:pointer}
+.switch-line input{width:auto}

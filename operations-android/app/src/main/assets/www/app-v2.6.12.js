@@ -324,6 +324,34 @@ async function notifyRiderApproaching(orderId, buttonEl) {
     if (buttonEl) buttonEl.disabled = false;
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
+async function previewBroadcastRecipients() {
+  const area = $('#broadcastArea').value;
+  try {
+    const { data, error } = await sb.rpc('count_marketing_recipients', { p_area: area });
+    if (error) throw error;
+    $('#broadcastRecipientCount').textContent = `${data ?? 0} device(s) will receive this.`;
+  } catch (error) {
+    toast(error.message || 'Could not preview recipients.');
+  }
+}
+async function sendBroadcast() {
+  if (!isAdmin()) return toast('Only Admin can send broadcasts.');
+  const area = $('#broadcastArea').value;
+  const title = $('#broadcastTitle').value.trim();
+  const body = $('#broadcastBody').value.trim();
+  if (!title || !body) return toast('Enter a title and message.');
+  const areaLabel = { all: 'all areas', cubao: 'Within Cubao', mplace: 'MPlace' }[area] || area;
+  const ok = await confirmAction('Send marketing broadcast?', `This pushes "${title}" to every opted-in customer device in ${areaLabel}. This cannot be undone.`);
+  if (!ok) return;
+  try {
+    const { data, error } = await sb.rpc('broadcast_marketing', { p_area: area, p_title: title, p_body: body });
+    if (error) throw error;
+    toast(`Broadcast sent to ${data?.recipient_count ?? 0} device(s).`);
+    $('#broadcastTitle').value = ''; $('#broadcastBody').value = ''; $('#broadcastRecipientCount').textContent = '';
+  } catch (error) {
+    toast(error.message || 'Could not send broadcast.');
+  }
+}
 async function enableBookingAlerts() {
   try {
     state.soundVoiceEnabled = true;
@@ -1065,6 +1093,8 @@ function bindEvents(){
   $('#inventoryForm').addEventListener('submit',saveInventory);$('#clearInventoryBtn').addEventListener('click',clearInventoryForm);$('#inventoryCategory').addEventListener('change',()=>updateInventoryPriceField(true));
   $('#inventoryBody').addEventListener('click',async e=>{const edit=e.target.dataset.editInventory,toggle=e.target.dataset.toggleInventory;if(edit){const i=state.inventory.find(x=>x.id===edit);$('#inventoryId').value=i.id;$('#inventoryName').value=i.name;$('#inventoryCategory').value=i.category;$('#inventoryStock').value=i.stock;$('#inventoryReorder').value=i.reorder_level;$('#inventoryCost').value=i.unit_cost;$('#inventoryCustomerPrice').value=Number(i.customer_price_per_load)||0;$('#inventoryConsumption').value=Number(i.consumption_per_load??1);$('#inventoryFormTitle').textContent='Edit item';updateInventoryPriceField(false);}if(toggle){if(!isAdmin())return toast('Only Admin can activate or inactivate inventory items.');const i=state.inventory.find(x=>x.id===toggle),next=i.is_active===false;const{error}=await sb.from('inventory').update({is_active:next,updated_by:state.profile.id}).eq('id',toggle);if(error)toast(error.message);else{await logAction(next?'inventory_activated':'inventory_inactivated','inventory',toggle,{});toast(next?'Item activated':'Item marked inactive');await loadCloudData();renderAll();}}});
   $('#settingsForm').addEventListener('input',autosaveSettings);
+  $('#previewBroadcastBtn').addEventListener('click',previewBroadcastRecipients);
+  $('#sendBroadcastBtn').addEventListener('click',sendBroadcast);
   $('#serviceAreaForm').addEventListener('submit',saveServiceArea);
   $('#clearServiceAreaBtn').addEventListener('click',clearServiceAreaForm);
   $('#serviceAreasBody').addEventListener('click',async e=>{

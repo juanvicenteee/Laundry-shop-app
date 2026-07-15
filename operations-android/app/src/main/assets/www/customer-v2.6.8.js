@@ -509,7 +509,7 @@ async function upsertDevice(phone, fcmToken) {
   if (!fcmToken) return;
   const prefs = loadNotifPrefs();
   try {
-    await sb.rpc('upsert_customer_device', { p_phone: phone, p_fcm_token: fcmToken, p_sound: prefs.sound, p_vibration: prefs.vibrate });
+    await sb.rpc('upsert_customer_device', { p_phone: phone, p_fcm_token: fcmToken, p_sound: prefs.sound, p_vibration: prefs.vibrate, p_area: state.place });
   } catch (error) {
     console.warn('Could not register this device for push notifications:', error);
   }

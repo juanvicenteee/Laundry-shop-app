@@ -192,3 +192,21 @@ second function that needs it.
    ```bash
    supabase functions deploy send-push-notification --no-verify-jwt
    ```
+
+## v7 — marketing broadcast by area
+
+`migrate-mobile-app-v7-marketing.sql` adds `last_known_area` +
+`marketing_opt_in` to `customer_devices` (updated automatically every
+time a customer's device registers, using their detected/selected
+service area), plus `count_marketing_recipients(area)` and
+`broadcast_marketing(area, title, body)` (admin-only). The ops app's
+Controls page gets a new "Marketing broadcast" panel: pick an area
+(All/Cubao/MPlace), preview the recipient count, then send — with a
+confirmation dialog since it's irreversible.
+
+### One-time setup
+
+Deploy the new function:
+```bash
+supabase functions deploy send-marketing-broadcast --no-verify-jwt
+```

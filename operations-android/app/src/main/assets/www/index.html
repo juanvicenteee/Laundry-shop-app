@@ -277,6 +277,26 @@
             </div>
           </form>
         </article>
+
+        <article class="panel settings-panel">
+          <div class="panel-head"><div><h2>Marketing broadcast</h2><span>Admin only · pushes to opted-in customer devices</span></div></div>
+          <div class="broadcast-form">
+            <label>Target area
+              <select id="broadcastArea">
+                <option value="all">All areas</option>
+                <option value="cubao">Within Cubao</option>
+                <option value="mplace">MPlace</option>
+              </select>
+            </label>
+            <label>Title <input id="broadcastTitle" placeholder="e.g. Weekend Flash Promo!"></label>
+            <label>Message <textarea id="broadcastBody" rows="3" placeholder="e.g. 10% off all Wash + Dry + Fold orders this weekend only."></textarea></label>
+            <div class="broadcast-actions">
+              <span id="broadcastRecipientCount" class="small"></span>
+              <button type="button" id="previewBroadcastBtn" class="btn secondary">Preview recipients</button>
+              <button type="button" id="sendBroadcastBtn" class="btn primary">Send broadcast</button>
+            </div>
+          </div>
+        </article>
       </section>
     </main>
   </div>

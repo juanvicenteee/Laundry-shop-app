@@ -5,6 +5,30 @@ from the **existing** Supabase project (`amjhrejmcnthlrqddznw`) that
 already runs the Bubblyfi-POS web system. Nothing here touches or
 deletes any existing data, table, or function from that system.
 
+## ⚠️ v4 through v8: DO NOT RUN
+
+While applying these migrations, we discovered a **separate AI session
+had already built a complete, independent backend** for customer
+accounts, addresses, wash preferences, cart recovery, marketing, and
+referrals/coupons directly against the live database — with no source
+file left behind anywhere (it only exists in the live Supabase schema).
+`v4-customer-accounts.sql` in particular creates a `customer_profiles`
+table with a different, incompatible shape than the one that's
+actually live (`user_id` PK vs `id` PK, different columns). Running it
+will error (as it already did once) or corrupt data.
+
+**`v5` through `v8` were never applied** and should not be — they'd
+create large-scale duplicate schema on top of what already exists
+(`customer_addresses`, `customer_wash_preferences`, `booking_carts`,
+`device_push_tokens`, `notification_preferences`, `coupons`,
+`customer_coupons`, `referral_events`, `mobile_app_settings`, and the
+RPCs `apply_mobile_booking_discount`, `complete_bubblyfi_referral`,
+`get_mobile_app_config`, `mobile_request_guard`,
+`consume_booking_rate_limit`). The client apps are being rewired to
+call that real backend directly instead. See `v9` below for the one
+part of `v4` that *is* still needed, and the in-progress reconciliation
+plan for everything else.
+
 ## What this adds
 
 1. **`get_my_requests(phone)`** — lets a customer look up their own
@@ -151,6 +175,11 @@ Until this is done, the "Continue with Google/Facebook" buttons in the
 customer app will show a Supabase error toast instead of opening a
 sign-in screen — everything else (guest booking) is unaffected.
 
+**Superseded — do not run.** See the warning at the top of this file.
+The real `customer_profiles` (PK `user_id`) + `handle_new_bubblyfi_user()`
+already exist live with an incompatible shape; running this file will
+error. The security fix section was extracted into `v9` instead.
+
 ## v5 — saved addresses + wash preferences
 
 `migrate-mobile-app-v5-addresses-preferences.sql` adds `saved_addresses`
@@ -161,7 +190,17 @@ conditioner, Zonrox Color Safe). Both are owner-scoped via RLS
 reads/writes the tables directly through a signed-in session. Only
 available once an account exists (v4); no setup beyond running the SQL.
 
-## v6 — abandoned-cart reminders
+**Superseded — do not run.** The real `customer_addresses` and
+`customer_wash_preferences` tables already exist live; the client apps
+call those instead.
+
+## v6 — abandoned-cart reminders (kept — not superseded)
+
+There's also a real `booking_carts` table (account-scoped, `user_id`+
+`cart_key`) already live. We're deliberately keeping this one instead
+of switching to that: `booking_drafts` works for guests with no
+account, and there's no collision (different table name) or reason to
+require login just for a cart-abandonment nudge. Both can coexist.
 
 `migrate-mobile-app-v6-cart-recovery.sql` adds `booking_drafts` (one row
 per device, keyed by FCM token — works for guests, no account needed),
@@ -211,6 +250,11 @@ Deploy the new function:
 supabase functions deploy send-marketing-broadcast --no-verify-jwt
 ```
 
+**Superseded — do not run.** The real `marketing_campaigns` table
+already exists live (though the actual send mechanism it uses is still
+being investigated as of the reconciliation work — see the plan). The
+ops app's Broadcast panel will be rewired once that's confirmed.
+
 ## v8 — referral codes + first-order discount
 
 `migrate-mobile-app-v8-referrals-coupons.sql` adds one unified
@@ -235,3 +279,26 @@ The discount is applied as an `UPDATE` after the insert, since the
 existing pricing trigger already computed `total` and its internals
 aren't something this migration should guess at and risk breaking. No
 setup beyond running the SQL — no new Edge Function or secret needed.
+
+**Superseded — do not run.** See the warning at the top of this file.
+The real referral/coupon system (`coupons`, `customer_coupons`,
+`referral_events`, `apply_mobile_booking_discount`,
+`complete_bubblyfi_referral`) already exists live; the client apps call
+that instead.
+
+## v9 — security fix: gate handle_new_user() on auth provider
+
+`migrate-mobile-app-v9-security-fix.sql` captures in git a fix that was
+already applied ad hoc via the SQL Editor during live debugging. The
+existing `handle_new_user()` trigger fires on every `auth.users` insert
+and grants a staff `profiles` role (`role='operator'`) to anyone whose
+email isn't literally `admin@bubblyfi.app` — since customers now sign
+up via Google/Facebook OAuth (handled separately by the pre-existing
+`handle_new_bubblyfi_user()` trigger), every customer signup would also
+silently receive staff access. The fix gates the insert on
+`raw_app_meta_data->>'provider' = 'email'`, since staff accounts are
+always created as email+password and customer accounts always via
+OAuth — a split the signing-up user can't spoof.
+
+Safe to run again even though it's already live — `create or replace`
+is idempotent. No setup beyond running the SQL.

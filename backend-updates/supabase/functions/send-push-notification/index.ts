@@ -76,6 +76,31 @@ async function handleNewRequestBroadcast(admin: ReturnType<typeof adminClient>, 
   return { ok: true, expoCount: expoTokens.length, fcmCount: fcmTokens.length, pushError };
 }
 
+// Device lookups target device_push_tokens (the real, account-scoped push
+// table) rather than the retired customer_devices — devices only register
+// there once signed in, matching the "push requires an account" decision
+// made during the backend reconciliation.
+
+async function customerTokensForUser(admin: ReturnType<typeof adminClient>, userId: string | null): Promise<string[]> {
+  if (!userId) return [];
+  const { data } = await admin
+    .from('device_push_tokens')
+    .select('token')
+    .eq('user_id', userId)
+    .eq('app_role', 'customer')
+    .eq('active', true);
+  return (data ?? []).map((row) => row.token).filter(Boolean);
+}
+
+async function sendToTokens(tokens: string[], title: string, body: string, data: Record<string, unknown>) {
+  let pushError: string | null = null;
+  for (const token of tokens) {
+    const result = await sendFcm(token, title, body, data);
+    if (!result.sent && result.error) pushError = result.error;
+  }
+  return pushError;
+}
+
 const requestStatusMessages: Record<string, string> = {
   Confirmed: "Your booking is confirmed! We'll see you at pickup time.",
   Scheduled: 'Your pickup has been scheduled.',
@@ -85,22 +110,18 @@ const requestStatusMessages: Record<string, string> = {
 async function handleRequestStatus(admin: ReturnType<typeof adminClient>, requestId: string, status: string) {
   const { data: request, error } = await admin
     .from('customer_order_requests')
-    .select('id,request_no,phone')
+    .select('id,request_no,user_id')
     .eq('id', requestId)
     .single();
   if (error || !request) throw new Error('Request not found');
 
-  const { data: device } = await admin
-    .from('customer_devices')
-    .select('fcm_token')
-    .eq('phone', request.phone)
-    .maybeSingle();
-  if (!device?.fcm_token) return { ok: true, message: 'No registered device for this customer yet.' };
+  const tokens = await customerTokensForUser(admin, request.user_id);
+  if (!tokens.length) return { ok: true, message: 'No registered device for this customer yet.' };
 
   const title = `Booking ${request.request_no}`;
   const body = requestStatusMessages[status] || `Your booking status is now ${status}.`;
-  const result = await sendFcm(device.fcm_token, title, body, { request_id: request.id, status });
-  return { ok: true, ...result };
+  const pushError = await sendToTokens(tokens, title, body, { request_id: request.id, status });
+  return { ok: true, tokenCount: tokens.length, pushError };
 }
 
 const orderStatusMessages: Record<string, string> = {
@@ -110,47 +131,50 @@ const orderStatusMessages: Record<string, string> = {
   Claimed: 'Your laundry has been claimed. Thank you for choosing Bubbly-fi!',
 };
 
+async function resolveOrderUserId(admin: ReturnType<typeof adminClient>, order: { customer_user_id?: string | null; customer_id?: string | null }) {
+  if (order.customer_user_id) return order.customer_user_id;
+  if (!order.customer_id) return null;
+  const { data: customer } = await admin.from('customers').select('user_id').eq('id', order.customer_id).maybeSingle();
+  return customer?.user_id ?? null;
+}
+
 async function handleOrderStatus(admin: ReturnType<typeof adminClient>, orderId: string, status: string) {
   const { data: order, error } = await admin
     .from('orders')
-    .select('id,receipt_no,customer_id,customers(phone)')
+    .select('id,receipt_no,customer_user_id,customer_id')
     .eq('id', orderId)
     .single();
   if (error || !order) throw new Error('Order not found');
 
-  const phone = (order as unknown as { customers: { phone: string } | null }).customers?.phone;
-  if (!phone) return { ok: true, message: 'No phone on file for this order.' };
-
-  const { data: device } = await admin.from('customer_devices').select('fcm_token').eq('phone', phone).maybeSingle();
-  if (!device?.fcm_token) return { ok: true, message: 'No registered device for this customer yet.' };
+  const userId = await resolveOrderUserId(admin, order);
+  const tokens = await customerTokensForUser(admin, userId);
+  if (!tokens.length) return { ok: true, message: 'No registered device for this customer yet.' };
 
   const title = order.receipt_no ? `Order ${order.receipt_no}` : 'Bubbly-fi order update';
   const body = orderStatusMessages[status] || `Your order status is now ${status}.`;
-  const result = await sendFcm(device.fcm_token, title, body, { order_id: order.id, status });
-  return { ok: true, ...result };
+  const pushError = await sendToTokens(tokens, title, body, { order_id: order.id, status });
+  return { ok: true, tokenCount: tokens.length, pushError };
 }
 
 async function handleRiderApproaching(admin: ReturnType<typeof adminClient>, orderId: string, distanceM: number | null) {
   const { data: order, error } = await admin
     .from('orders')
-    .select('id,receipt_no,customer_id,customers(phone)')
+    .select('id,receipt_no,customer_user_id,customer_id')
     .eq('id', orderId)
     .single();
   if (error || !order) throw new Error('Order not found');
 
-  const phone = (order as unknown as { customers: { phone: string } | null }).customers?.phone;
-  if (!phone) return { ok: true, message: 'No phone on file for this order.' };
-
-  const { data: device } = await admin.from('customer_devices').select('fcm_token').eq('phone', phone).maybeSingle();
-  if (!device?.fcm_token) return { ok: true, message: 'No registered device for this customer yet.' };
+  const userId = await resolveOrderUserId(admin, order);
+  const tokens = await customerTokensForUser(admin, userId);
+  if (!tokens.length) return { ok: true, message: 'No registered device for this customer yet.' };
 
   const title = 'Your rider is on the way!';
   const body =
     distanceM != null && distanceM < 500
       ? 'Your rider is approaching your lobby — please be ready!'
       : 'Your rider is on the way with your laundry.';
-  const result = await sendFcm(device.fcm_token, title, body, { order_id: order.id, distance_m: distanceM ?? '' });
-  return { ok: true, ...result };
+  const pushError = await sendToTokens(tokens, title, body, { order_id: order.id, distance_m: distanceM ?? '' });
+  return { ok: true, tokenCount: tokens.length, pushError };
 }
 
 // --- Entry point ---

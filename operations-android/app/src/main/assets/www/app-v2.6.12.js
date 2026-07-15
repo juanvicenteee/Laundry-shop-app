@@ -324,12 +324,19 @@ async function notifyRiderApproaching(orderId, buttonEl) {
     if (buttonEl) buttonEl.disabled = false;
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
 }
+// Sends via the real send-marketing-push Edge Function (staff-authenticated,
+// already deployed) rather than a duplicate RPC — it handles the
+// notification_preferences.marketing opt-out check and marketing_campaigns
+// logging itself. There's no dry-run mode on that function, so this preview
+// is an estimate (device count only, not opt-in-filtered).
 async function previewBroadcastRecipients() {
   const area = $('#broadcastArea').value;
   try {
-    const { data, error } = await sb.rpc('count_marketing_recipients', { p_area: area });
+    let query = sb.from('device_push_tokens').select('user_id', { count: 'exact', head: true }).eq('app_role', 'customer').eq('active', true);
+    if (area !== 'all') query = query.eq('area', area);
+    const { count, error } = await query;
     if (error) throw error;
-    $('#broadcastRecipientCount').textContent = `${data ?? 0} device(s) will receive this.`;
+    $('#broadcastRecipientCount').textContent = `~${count ?? 0} device(s) in this area (some may have marketing notifications turned off).`;
   } catch (error) {
     toast(error.message || 'Could not preview recipients.');
   }
@@ -344,9 +351,9 @@ async function sendBroadcast() {
   const ok = await confirmAction('Send marketing broadcast?', `This pushes "${title}" to every opted-in customer device in ${areaLabel}. This cannot be undone.`);
   if (!ok) return;
   try {
-    const { data, error } = await sb.rpc('broadcast_marketing', { p_area: area, p_title: title, p_body: body });
+    const { data, error } = await sb.functions.invoke('send-marketing-push', { body: { title, body, area } });
     if (error) throw error;
-    toast(`Broadcast sent to ${data?.recipient_count ?? 0} device(s).`);
+    toast(`Broadcast sent to ${data?.delivered ?? 0} device(s).`);
     $('#broadcastTitle').value = ''; $('#broadcastBody').value = ''; $('#broadcastRecipientCount').textContent = '';
   } catch (error) {
     toast(error.message || 'Could not send broadcast.');

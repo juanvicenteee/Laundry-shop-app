@@ -323,20 +323,78 @@ backend (see the warning at the top of this file). Two things:
    migration's client-side companion change added one to the ops app's
    Controls page.
 2. **Builds the marketing broadcast send path.** `marketing_campaigns`
-   existed as a log table with no sender anywhere (SQL or Edge
-   Function) — confirmed via diagnostic queries during this session.
-   Adds `count_marketing_recipients(area)` / `broadcast_marketing(area,
+   existed as a log table with no sender anywhere in SQL — confirmed
+   via diagnostic queries during this session. Adds
+   `count_marketing_recipients(area)` / `broadcast_marketing(area,
    title, body)` RPCs (admin-only, gated on `is_bubblyfi_admin()`)
    targeting the real `device_push_tokens`/`notification_preferences`
    tables, paired with a retargeted `send-marketing-broadcast` Edge
    Function that reuses the FCM-sending helper already extracted to
-   `_shared/fcm.ts` in v6. The ops app's Broadcast panel already calls
-   these exact RPC names (from the original, never-applied v7) so no
-   client change was needed there.
+   `_shared/fcm.ts` in v6.
+
+   **⚠️ Correction, see the section below: these turned out to be
+   redundant.** "No sender anywhere" was based on SQL-only diagnostics
+   (`pg_proc`, `information_schema`) — Edge Functions are invisible to
+   those queries entirely. A real, already-deployed
+   `send-marketing-push` function existed the whole time. The ops app
+   now calls that instead; `count_marketing_recipients`/
+   `broadcast_marketing` are unused but left in place (harmless).
 
 ### One-time setup
 
 Deploy the retargeted function:
 ```bash
 supabase functions deploy send-marketing-broadcast --no-verify-jwt
+```
+
+## Post-v10: discovering the real Edge Functions (`supabase functions list`)
+
+Everything above was diagnosed via SQL alone (`information_schema`,
+`pg_proc`, `pg_trigger`) — but **Edge Functions live outside Postgres
+and are completely invisible to those queries.** Running
+`supabase functions list` revealed five real, already-deployed
+functions with no local source, overlapping with what this
+reconciliation built:
+
+- **`submit-customer-order`** — the real booking entry point. Requires
+  Cloudflare Turnstile CAPTCHA verification plus an `Origin` header
+  allowlist. This is web-form anti-bot protection that doesn't fit a
+  native, app-store-distributed app well — **decision: leave this
+  alone**, the client keeps calling the `submit_customer_order` RPC
+  directly (already works, confirmed throughout this session).
+- **`register-device`** — functionally equivalent to the client's
+  direct `device_push_tokens` upsert (same effect, adds server-side
+  token-length validation). Not worth switching — low value.
+- **`push-order-status`** — the real, staff-initiated order-status push
+  mechanism, and the actual writer of `order_status_events` (earlier
+  incorrectly diagnosed as a dead/orphaned table — it isn't, it's
+  populated by this function). **This exposed a real bug**: my
+  trigger-based auto-push (`notify_order_status`/
+  `notify_customer_request_status` → `send-push-notification`) still
+  looked up the retired `customer_devices` table by phone, so it had
+  been silently sending to zero devices since device registration
+  moved to `device_push_tokens` earlier in this reconciliation. Fixed
+  by updating `send-push-notification`'s handlers to look up
+  `device_push_tokens` by `user_id` (resolved from
+  `customer_order_requests.user_id` or `orders.customer_user_id` /
+  `orders.customer_id → customers.user_id`, matching the same
+  resolution `push-order-status` uses) instead. The trigger-based
+  approach is kept (no ops-app UI changes needed) rather than switching
+  to calling `push-order-status` directly.
+- **`send-abandoned-cart-reminders`** — a complete, real,
+  account-scoped cart-abandonment system (`booking_carts`), but nothing
+  currently writes to that table, so it's dormant. No collision with
+  the guest-friendly `booking_drafts` system from v6 — left as-is.
+- **`send-marketing-push`** — the real, complete, already-working
+  marketing send mechanism (filters by area, respects
+  `notification_preferences.marketing`, logs to `marketing_campaigns`).
+  Makes the v10 `broadcast_marketing`/`send-marketing-broadcast` fully
+  redundant. The ops app's Broadcast panel now calls
+  `sb.functions.invoke('send-marketing-push', ...)` directly instead
+  (the recipient-count preview button now does a lightweight client-side
+  count query, since `send-marketing-push` has no dry-run mode).
+
+**Redeploy `send-push-notification`** after this fix:
+```bash
+supabase functions deploy send-push-notification --no-verify-jwt
 ```

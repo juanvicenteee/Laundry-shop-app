@@ -45,7 +45,9 @@ android {
 
     buildTypes {
         debug {
-            applicationIdSuffix = ".debug"
+            // No applicationIdSuffix: Firebase only has ph.bubblyfi.customer
+            // registered, not a ".debug" variant, and the google-services
+            // plugin fails the build if it can't find a matching client.
             versionNameSuffix = "-debug"
         }
         release {

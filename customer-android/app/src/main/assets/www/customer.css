@@ -21,3 +21,19 @@
 .notif-settings strong{width:100%;font-size:.9rem;color:#0d5a70}
 .switch-line{display:flex;align-items:center;gap:6px;font-size:.85rem;color:#0d5a70;cursor:pointer}
 .switch-line input{width:auto}
+
+.pin-map-wrap{margin-top:10px}
+.pin-map-hint{margin:0 0 6px;font-size:.8rem;color:#4a6a75}
+.pin-map{height:220px;border-radius:10px;overflow:hidden;border:1px solid #cfeefc}
+
+.auth-bar{margin:0 0 12px;padding:9px 14px;border-radius:10px;background:#eafaff;border:1px solid #cfeefc;font-size:.82rem}
+.auth-signed-out,.auth-signed-in{display:flex;flex-wrap:wrap;align-items:center;gap:8px;color:#0d5a70}
+.auth-signed-in strong{color:#0a3d4d}
+.btn.compact{padding:6px 12px;font-size:.78rem;min-height:auto}
+
+.account-panel{margin:0 0 12px;padding:14px 16px;border-radius:12px;background:#fff;border:1px solid #e3eef2}
+.account-panel h3{margin:0 0 10px;font-size:1rem;color:#0a3d4d}
+.account-panel-form{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin-top:8px}
+.account-panel-form label{flex:1;min-width:180px}
+.saved-address-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #eef4f6}
+.saved-address-row small{display:block;color:#5c7c86;font-size:.78rem}

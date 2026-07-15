@@ -22,10 +22,20 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|keyboard|keyboardHidden|uiMode"
             android:exported="true"
             android:hardwareAccelerated="true"
+            android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- OAuth redirect target (Google/Facebook sign-in). singleTask above
+                 ensures this reuses the existing WebView instance via onNewIntent()
+                 instead of reloading the whole app and losing in-progress state. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ph.bubblyfi.customer" android:host="auth-callback" />
             </intent-filter>
         </activity>
 

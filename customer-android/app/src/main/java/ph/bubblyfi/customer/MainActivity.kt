@@ -81,6 +81,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
         ActivityResultContracts.RequestPermission()
     ) { /* no-op: JS reads current status lazily via getFcmToken() */ }
 
+    private var pendingAuthCallbackUrl: String? = null
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -133,6 +135,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
+                flushPendingAuthCallback()
             }
         }
 
@@ -205,9 +208,31 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         if (savedInstanceState == null) {
             webView.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/www/index.html")
+            handleIntent(intent)
         } else {
             webView.restoreState(savedInstanceState)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "ph.bubblyfi.customer" && uri.host == "auth-callback") {
+            pendingAuthCallbackUrl = uri.toString()
+            flushPendingAuthCallback()
+        }
+    }
+
+    private fun flushPendingAuthCallback() {
+        val url = pendingAuthCallbackUrl ?: return
+        val escaped = url.replace("\\", "\\\\").replace("'", "\\'")
+        webView.evaluateJavascript("window.onAuthCallback && window.onAuthCallback('$escaped')", null)
+        pendingAuthCallbackUrl = null
     }
 
     private fun openExternal(uri: Uri): Boolean {

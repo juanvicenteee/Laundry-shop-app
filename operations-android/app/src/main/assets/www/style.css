@@ -98,3 +98,13 @@
 .request-kpi-alert strong{color:#a85b00}
 @media(max-width:1100px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:720px){.kpi-grid{grid-template-columns:1fr}}
+
+.booking-days-row{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:4px}
+.booking-days-row>span{font-weight:700;color:var(--muted);font-size:12px}
+.day-check{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600}
+.day-check input{width:auto}
+.service-areas-body{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.service-area-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border:1px solid var(--border,#e2e8ef);border-radius:8px}
+.service-area-row span{font-size:12px;color:var(--muted)}
+.service-area-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.service-area-form-actions{grid-column:1/-1;display:flex;gap:8px}

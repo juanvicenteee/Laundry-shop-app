@@ -4,14 +4,50 @@ const SUPABASE_URL = 'https://amjhrejmcnthlrqddznw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5KkgIxPlTNAZjqgRX9Yh3A_tqLD2hNE';
 const SHOP_ADDRESS = '92 14th Ave, Cubao, Quezon City, Philippines, 1109';
 const LALAMOVE_WEB_URL = 'https://web.lalamove.com/';
-// Business service geofences. MPlace is checked first; all remaining points
-// within 3.5 km of the Bubbly-fi shop are treated as Within Cubao.
-const SERVICE_GEOFENCES = Object.freeze({
+// Business service geofences. Tightest radius wins. Defaults here are a
+// fallback only — loadOptions() replaces this with the admin-configured
+// public.service_areas rows once the booking options RPC responds.
+let SERVICE_GEOFENCES = {
   mplace: { lat: 14.6389788, lng: 121.0334650, radiusM: 500 },
   cubao: { lat: 14.6175619, lng: 121.0598714, radiusM: 3500 }
-});
+};
+function applyServiceAreasFromServer(areas) {
+  if (!Array.isArray(areas) || !areas.length) return;
+  const next = {};
+  areas.forEach(a => { next[a.code] = { lat: Number(a.center_lat), lng: Number(a.center_lng), radiusM: Number(a.radius_m) }; });
+  SERVICE_GEOFENCES = next;
+}
+function manilaNow() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', hour12: false, weekday: 'short', hour: '2-digit', minute: '2-digit'
+  }).formatToParts(new Date());
+  const map = Object.fromEntries(parts.map(p => [p.type, p.value]));
+  const weekdayIndex = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 }[map.weekday] ?? 0;
+  return { hour: Number(map.hour), minute: Number(map.minute), weekdayIndex };
+}
+function timeStringToMinutes(t) { const [h,m] = String(t||'00:00').split(':').map(Number); return h*60+(m||0); }
+function isWithinBookingHours() {
+  const s = state.settings;
+  const mask = Number(s.booking_days_mask ?? 127);
+  const { hour, minute, weekdayIndex } = manilaNow();
+  if (((mask >> weekdayIndex) & 1) === 0) return false;
+  const nowMinutes = hour * 60 + minute;
+  const open = timeStringToMinutes(s.booking_open_time || '07:30');
+  const close = timeStringToMinutes(s.booking_close_time || '19:30');
+  return nowMinutes >= open && nowMinutes <= close;
+}
+function formatHm(t) {
+  const [h, m] = String(t || '00:00').split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM'; const h12 = ((h % 12) || 12);
+  return `${h12}:${String(m || 0).padStart(2,'0')} ${period}`;
+}
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+  // Accounts are optional (guest booking by phone still works unchanged),
+  // but signed-in sessions need to persist and refresh like any other app.
+  // detectSessionInUrl stays false: the OAuth redirect lands on a custom
+  // Android intent scheme, not a browser URL, and is handled manually by
+  // window.onAuthCallback (see MainActivity.kt's flushPendingAuthCallback).
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
 });
 
 const $ = selector => document.querySelector(selector);
@@ -52,6 +88,42 @@ function detectServiceArea(lat, lng) {
   if (distanceMeters(lat, lng, SERVICE_GEOFENCES.mplace.lat, SERVICE_GEOFENCES.mplace.lng) <= SERVICE_GEOFENCES.mplace.radiusM) return 'mplace';
   if (distanceMeters(lat, lng, SERVICE_GEOFENCES.cubao.lat, SERVICE_GEOFENCES.cubao.lng) <= SERVICE_GEOFENCES.cubao.radiusM) return 'cubao';
   return 'outside';
+}
+let pinMap = null;
+let pinMarker = null;
+function showPinMap(lat, lng) {
+  if (typeof L === 'undefined') return; // Offline: Leaflet CDN didn't load. GPS capture without the map still works.
+  $('#pinMapWrap').classList.remove('hidden');
+  const latNum = Number(lat), lngNum = Number(lng);
+  if (!pinMap) {
+    pinMap = L.map('pinMap').setView([latNum, lngNum], 17);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(pinMap);
+    pinMarker = L.marker([latNum, lngNum], { draggable: true }).addTo(pinMap);
+    pinMarker.on('dragend', () => {
+      const pos = pinMarker.getLatLng();
+      updatePinPosition(pos.lat, pos.lng);
+    });
+    pinMap.on('click', event => {
+      pinMarker.setLatLng(event.latlng);
+      updatePinPosition(event.latlng.lat, event.latlng.lng);
+    });
+    setTimeout(() => pinMap.invalidateSize(), 200);
+  } else {
+    pinMap.setView([latNum, lngNum], 17);
+    pinMarker.setLatLng([latNum, lngNum]);
+  }
+}
+function updatePinPosition(lat, lng) {
+  state.gpsLat = lat.toFixed(7); state.gpsLng = lng.toFixed(7);
+  state.mapsUrl = `https://www.google.com/maps?q=${state.gpsLat},${state.gpsLng}`;
+  $('#gpsLat').value = state.gpsLat; $('#gpsLng').value = state.gpsLng; $('#mapsUrl').value = state.mapsUrl;
+  const detected = applyDetectedArea(state.gpsLat, state.gpsLng);
+  $('#gpsStatus').textContent = `Pin adjusted · ${places[detected]}`;
+  $('#mapsLink').href = state.mapsUrl; $('#mapsLink').classList.remove('hidden');
+  toast(`Service area set to ${places[detected]}.`);
 }
 function applyDetectedArea(lat, lng, accuracy = 0) {
   const detected = detectServiceArea(Number(lat), Number(lng));
@@ -175,7 +247,13 @@ async function loadOptions() {
   if (error) throw new Error(`${error.message}. Run sql/migrate-v2.0-customer-booking.sql in Supabase first.`);
   state.settings = { ...defaults, ...(data?.settings || {}) };
   state.products = Array.isArray(data?.products) ? data.products : [];
+  applyServiceAreasFromServer(data?.service_areas);
   $('#loadingCard').classList.add('hidden');
+  if (!isWithinBookingHours()) {
+    $('#hoursNotice').textContent = `Bubbly-fi is currently closed for new bookings. We accept pickups from ${formatHm(state.settings.booking_open_time)} to ${formatHm(state.settings.booking_close_time)}. Please come back during business hours.`;
+    $('#hoursNotice').classList.remove('hidden');
+    return;
+  }
   $('#bookingForm').classList.remove('hidden');
   renderAll();
 }
@@ -262,6 +340,160 @@ function validateBooking() {
   if (serviceHasWash() && !isFullServiceSelection() && !['inventory','bring_own','none'].includes(state.conditionerSource)) { toast('Select fabric conditioner, Bring your own, or None.'); return false; }
   if (!$('#paymentProof').files?.[0]) { toast('Upload the GCash payment screenshot.'); return false; }
   return true;
+}
+
+async function signInWithProvider(provider) {
+  try {
+    const { data, error } = await sb.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: 'ph.bubblyfi.customer://auth-callback', skipBrowserRedirect: true }
+    });
+    if (error) throw error;
+    if (data?.url) {
+      if (window.AndroidBridge?.openExternalUrl) window.AndroidBridge.openExternalUrl(data.url);
+      else window.open(data.url, '_blank', 'noopener');
+    }
+  } catch (error) {
+    toast(error.message || 'Could not start sign-in.');
+  }
+}
+window.onAuthCallback = async url => {
+  try {
+    const hash = (url.split('#')[1] || '');
+    const params = new URLSearchParams(hash);
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token');
+    if (!accessToken || !refreshToken) {
+      const errorDesc = params.get('error_description');
+      if (errorDesc) toast(decodeURIComponent(errorDesc.replace(/\+/g, ' ')));
+      return;
+    }
+    const { error } = await sb.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    if (error) throw error;
+    await refreshAuthUi();
+    toast('Signed in!');
+  } catch (error) {
+    toast(error.message || 'Sign-in did not complete.');
+  }
+};
+async function refreshAuthUi() {
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  $('#authSignedOut')?.classList.toggle('hidden', Boolean(session));
+  $('#authSignedIn')?.classList.toggle('hidden', !session);
+  if (session) {
+    const { data: profile } = await sb.from('customer_profiles').select('display_name,phone').eq('id', session.user.id).maybeSingle();
+    if ($('#authName')) $('#authName').textContent = profile?.display_name || session.user.email || 'Bubbly-fi customer';
+    state.accountPhone = profile?.phone || '';
+    if (state.accountPhone && $('#phone')) $('#phone').value = state.accountPhone;
+    await loadAccountExtras();
+  } else {
+    state.accountPhone = '';
+    $('#addressesPanel')?.classList.add('hidden');
+    $('#preferencesPanel')?.classList.add('hidden');
+  }
+}
+async function loadAccountExtras() {
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  if (!session) { state.savedAddresses = []; state.washPrefs = null; return; }
+  const [addressesRes, prefsRes] = await Promise.all([
+    sb.from('saved_addresses').select('*').eq('customer_profile_id', session.user.id).order('is_default', { ascending: false }),
+    sb.from('wash_preferences').select('*').eq('customer_profile_id', session.user.id).maybeSingle()
+  ]);
+  state.savedAddresses = addressesRes.data || [];
+  state.washPrefs = prefsRes.data || null;
+  renderSavedAddresses();
+  renderWashPreferences();
+}
+function renderSavedAddresses() {
+  const box = $('#savedAddressesList');
+  if (!box) return;
+  box.innerHTML = state.savedAddresses.length
+    ? state.savedAddresses.map(a => `<div class="saved-address-row"><div><strong>${escapeHtml(a.label)}${a.is_default ? ' · Default' : ''}</strong><small>${escapeHtml([a.building_unit, a.address_line, a.barangay, a.city].filter(Boolean).join(', '))}</small></div><div class="row-actions"><button type="button" data-use-address="${a.id}">Use</button><button type="button" data-delete-address="${a.id}">Delete</button></div></div>`).join('')
+    : '<p class="small">No saved addresses yet.</p>';
+}
+async function saveNewAddress() {
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  if (!session) return toast('Sign in to save addresses.');
+  const label = $('#newAddressLabel').value.trim();
+  if (!label) return toast('Enter a label for this address, e.g. Home or Office.');
+  const payload = {
+    customer_profile_id: session.user.id,
+    label,
+    address_line: $('#addressLine').value.trim(),
+    building_unit: $('#buildingUnit').value.trim(),
+    barangay: $('#barangay').value.trim(),
+    city: $('#city').value.trim(),
+    landmark: $('#landmark').value.trim(),
+    gps_lat: state.gpsLat || null,
+    gps_lng: state.gpsLng || null
+  };
+  const { error } = await sb.from('saved_addresses').insert(payload);
+  if (error) return toast(error.message);
+  $('#newAddressLabel').value = '';
+  toast('Address saved.');
+  await loadAccountExtras();
+}
+function useSavedAddress(id) {
+  const a = state.savedAddresses.find(x => x.id === id);
+  if (!a) return;
+  $('#addressLine').value = a.address_line || '';
+  $('#buildingUnit').value = a.building_unit || '';
+  $('#barangay').value = a.barangay || '';
+  $('#city').value = a.city || '';
+  $('#landmark').value = a.landmark || '';
+  if (a.gps_lat && a.gps_lng) {
+    state.gpsLat = String(a.gps_lat); state.gpsLng = String(a.gps_lng);
+    state.mapsUrl = `https://www.google.com/maps?q=${state.gpsLat},${state.gpsLng}`;
+    $('#gpsLat').value = state.gpsLat; $('#gpsLng').value = state.gpsLng; $('#mapsUrl').value = state.mapsUrl;
+    applyDetectedArea(state.gpsLat, state.gpsLng);
+    showPinMap(state.gpsLat, state.gpsLng);
+  }
+  toast(`Using "${a.label}" address.`);
+}
+async function deleteSavedAddress(id) {
+  const { error } = await sb.from('saved_addresses').delete().eq('id', id);
+  if (error) return toast(error.message);
+  toast('Address removed.');
+  await loadAccountExtras();
+}
+function renderWashPreferences() {
+  const p = state.washPrefs;
+  if (!$('#prefWaterTempSelect')) return;
+  $('#prefWaterTempSelect').value = p?.water_temp || 'cold';
+  $('#prefDetergentType').value = p?.detergent_type || '';
+  $('#prefFabricSoftener').checked = Boolean(p?.fabric_softener);
+  $('#prefFabricSoftenerType').value = p?.fabric_softener_type || '';
+  $('#prefZonrox').checked = Boolean(p?.zonrox);
+}
+async function saveWashPreferences() {
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  if (!session) return toast('Sign in to save wash preferences.');
+  const payload = {
+    customer_profile_id: session.user.id,
+    water_temp: $('#prefWaterTempSelect').value || 'cold',
+    detergent_type: $('#prefDetergentType').value.trim(),
+    fabric_softener: $('#prefFabricSoftener').checked,
+    fabric_softener_type: $('#prefFabricSoftenerType').value.trim(),
+    zonrox: $('#prefZonrox').checked,
+    updated_at: new Date().toISOString()
+  };
+  const { error } = await sb.from('wash_preferences').upsert(payload, { onConflict: 'customer_profile_id' });
+  if (error) return toast(error.message);
+  toast('Wash preferences saved.');
+  state.washPrefs = payload;
+}
+async function linkAccountPhone(phone) {
+  try {
+    const { data } = await sb.auth.getSession();
+    if (!data?.session) return;
+    await sb.rpc('update_my_customer_phone', { p_phone: phone });
+  } catch (error) {
+    console.warn('Could not link this phone to the signed-in account:', error);
+  }
 }
 
 const NOTIF_PREF_KEY = 'bubblyfi-notif-prefs';
@@ -369,6 +601,7 @@ async function submitBooking(event) {
     sendBookingNotifications(data.request_no);
     renderNotifSettings(payload.phone);
     registerDeviceForPush(payload.phone);
+    linkAccountPhone(payload.phone);
   } catch (error) {
     console.error(error);
     const message = error?.message || explainSupabaseError(error, submitStage);
@@ -424,6 +657,7 @@ function bindEvents() {
       const detected = applyDetectedArea(state.gpsLat, state.gpsLng, position.coords.accuracy);
       $('#gpsStatus').textContent=`GPS captured · ${places[detected]}`;
       $('#mapsLink').href=state.mapsUrl; $('#mapsLink').classList.remove('hidden'); $('#captureGps').disabled=false;
+      showPinMap(state.gpsLat, state.gpsLng);
       toast(`Service area set to ${places[detected]}.`);
     }, error => {
       $('#gpsStatus').textContent='GPS not added'; $('#gpsDetails').textContent=`${error.message}. GPS is optional; select the service area manually.`; $('#areaMode').textContent='Selected manually'; $('#captureGps').disabled=false;
@@ -440,9 +674,22 @@ function bindEvents() {
   });
   $('#bookingForm').addEventListener('submit', submitBooking);
   $('#newBooking').addEventListener('click', () => location.reload());
+  $('#authGoogle')?.addEventListener('click', () => signInWithProvider('google'));
+  $('#authFacebook')?.addEventListener('click', () => signInWithProvider('facebook'));
+  $('#authSignOut')?.addEventListener('click', async () => { await sb.auth.signOut(); await refreshAuthUi(); toast('Signed out.'); });
+  $('#toggleAddresses')?.addEventListener('click', () => { $('#preferencesPanel').classList.add('hidden'); $('#addressesPanel').classList.toggle('hidden'); });
+  $('#togglePreferences')?.addEventListener('click', () => { $('#addressesPanel').classList.add('hidden'); $('#preferencesPanel').classList.toggle('hidden'); });
+  $('#saveNewAddressBtn')?.addEventListener('click', saveNewAddress);
+  $('#savePreferencesBtn')?.addEventListener('click', saveWashPreferences);
+  $('#savedAddressesList')?.addEventListener('click', event => {
+    const useBtn = event.target.closest('[data-use-address]');
+    const deleteBtn = event.target.closest('[data-delete-address]');
+    if (useBtn) useSavedAddress(useBtn.dataset.useAddress);
+    if (deleteBtn) deleteSavedAddress(deleteBtn.dataset.deleteAddress);
+  });
 }
 
-setDefaultPickup(); bindEvents();
+setDefaultPickup(); bindEvents(); refreshAuthUi();
 loadOptions().catch(error => {
   console.error(error); $('#loadingCard').classList.add('hidden'); $('#errorCard').textContent=error.message; $('#errorCard').classList.remove('hidden');
 });

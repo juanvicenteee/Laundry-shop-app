@@ -242,6 +242,39 @@
             <label>Within Cubao two-way pickup & delivery<input id="deliveryStandard" type="number" min="0"></label>
             <label>MPlace two-way pickup & delivery<input id="deliveryMplace" type="number" min="0"></label>
             <p class="settings-help"><strong>Outside Cubao:</strong> Service prices automatically follow Within Cubao rates. Pickup/delivery is handled by LalaMove only, and the LalaMove charge is quoted and paid separately—not included in the POS or customer booking total.</p>
+
+            <div class="settings-group-title">Booking hours</div>
+            <label>Opens at<input id="bookingOpenTime" type="time"></label>
+            <label>Closes at<input id="bookingCloseTime" type="time"></label>
+            <label>Same-day pickup cutoff<input id="sameDayCutoffTime" type="time"></label>
+            <div class="booking-days-row">
+              <span>Open on</span>
+              <label class="day-check"><input type="checkbox" id="bookingDayMon" data-day-bit="0">Mon</label>
+              <label class="day-check"><input type="checkbox" id="bookingDayTue" data-day-bit="1">Tue</label>
+              <label class="day-check"><input type="checkbox" id="bookingDayWed" data-day-bit="2">Wed</label>
+              <label class="day-check"><input type="checkbox" id="bookingDayThu" data-day-bit="3">Thu</label>
+              <label class="day-check"><input type="checkbox" id="bookingDayFri" data-day-bit="4">Fri</label>
+              <label class="day-check"><input type="checkbox" id="bookingDaySat" data-day-bit="5">Sat</label>
+              <label class="day-check"><input type="checkbox" id="bookingDaySun" data-day-bit="6">Sun</label>
+            </div>
+            <p class="settings-help">These apply to new customer bookings only. Times are in Asia/Manila time.</p>
+          </form>
+        </article>
+
+        <article class="panel settings-panel">
+          <div class="panel-head"><div><h2>Service area geofences</h2><span>Admin only</span></div></div>
+          <div id="serviceAreasBody" class="service-areas-body"></div>
+          <form id="serviceAreaForm" class="service-area-form">
+            <input id="serviceAreaId" type="hidden">
+            <label>Name<input id="serviceAreaName" required placeholder="e.g. Cubao"></label>
+            <label>Code<input id="serviceAreaCode" required placeholder="e.g. cubao"></label>
+            <label>Center latitude<input id="serviceAreaLat" type="number" step="0.0000001" required></label>
+            <label>Center longitude<input id="serviceAreaLng" type="number" step="0.0000001" required></label>
+            <label>Radius (meters)<input id="serviceAreaRadius" type="number" min="1" required></label>
+            <div class="service-area-form-actions">
+              <button type="submit" class="btn primary">Save area</button>
+              <button type="button" id="clearServiceAreaBtn" class="btn secondary">Clear</button>
+            </div>
           </form>
         </article>
       </section>

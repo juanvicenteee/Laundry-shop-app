@@ -104,3 +104,59 @@ device still registered the old way). This requires a Firebase project:
 Until steps 1–3 are done, the SQL/trigger/RPC side works end-to-end,
 but `sendFcm(...)` will return `{ sent: false, error: 'FIREBASE_SERVICE_ACCOUNT_JSON secret is not configured yet.' }` instead of actually delivering a push — everything else (idempotency, status
 tracking) still runs correctly.
+
+## v3 — configurable geofencing + business hours
+
+`migrate-mobile-app-v3-booking-rules.sql` moves the Cubao/MPlace
+geofence radii out of hardcoded SQL/JS constants into an admin-editable
+`service_areas` table, and adds business-hours + same-day-cutoff
+enforcement (`booking_open_time`, `booking_close_time`,
+`booking_days_mask`, `same_day_cutoff_time` on `settings`). Both are
+editable from the ops app's Controls page — no manual setup beyond
+running the SQL.
+
+## v4 — customer accounts (Google/Facebook OAuth)
+
+`migrate-mobile-app-v4-customer-accounts.sql` adds real customer
+accounts. **Read the comment at the top of that file before running
+it** — it also fixes a real privilege-escalation bug in the existing
+`handle_new_user()` trigger that would otherwise let any customer who
+signs up via Google/Facebook be silently granted a staff role.
+
+Accounts are additive — the existing phone-only guest booking flow is
+completely unchanged.
+
+### One-time setup (you'll need to do this yourself)
+
+OAuth app registration and provider configuration are account/dashboard
+actions that require your own Google/Facebook developer accounts — I
+can't create these for you:
+
+1. **Google**: create an OAuth client in
+   [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+   (type: Web application). Add the redirect URI Supabase gives you
+   (Authentication → Providers → Google in the Supabase dashboard shows
+   the exact callback URL to paste back into Google Cloud Console).
+2. **Facebook**: create an app at
+   [Facebook for Developers](https://developers.facebook.com/apps/),
+   add the Facebook Login product, and likewise copy Supabase's
+   callback URL into it.
+3. In the Supabase dashboard → Authentication → Providers, enable
+   Google and Facebook and paste in each provider's Client ID/Secret
+   (this step involves real secrets, so it has to be you, not me).
+4. In Supabase dashboard → Authentication → URL Configuration, add
+   `ph.bubblyfi.customer://auth-callback` to the allowed redirect URLs.
+
+Until this is done, the "Continue with Google/Facebook" buttons in the
+customer app will show a Supabase error toast instead of opening a
+sign-in screen — everything else (guest booking) is unaffected.
+
+## v5 — saved addresses + wash preferences
+
+`migrate-mobile-app-v5-addresses-preferences.sql` adds `saved_addresses`
+(multiple labeled addresses per account, one can be default) and
+`wash_preferences` (water temperature, detergent type, fabric
+conditioner, Zonrox Color Safe). Both are owner-scoped via RLS
+(`customer_profile_id = auth.uid()`) rather than RPCs — the client
+reads/writes the tables directly through a signed-in session. Only
+available once an account exists (v4); no setup beyond running the SQL.

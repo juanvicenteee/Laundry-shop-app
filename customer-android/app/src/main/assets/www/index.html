@@ -7,6 +7,7 @@
   <title>Book a Pickup | Bubbly-fi Laundry Shop</title>
   <link rel="icon" href="assets/logo.png">
   <link rel="stylesheet" href="customer.css?v=2.6.11">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 </head>
 <body>
   <div id="toast" class="toast" aria-live="polite"></div>
@@ -19,6 +20,48 @@
   </header>
 
   <main class="booking-shell">
+    <div id="authBar" class="auth-bar">
+      <div id="authSignedOut" class="auth-signed-out">
+        <span>Sign in for faster booking next time</span>
+        <button id="authGoogle" class="btn secondary compact" type="button">Continue with Google</button>
+        <button id="authFacebook" class="btn secondary compact" type="button">Continue with Facebook</button>
+      </div>
+      <div id="authSignedIn" class="auth-signed-in hidden">
+        <span>Signed in as <strong id="authName"></strong></span>
+        <button id="toggleAddresses" class="btn secondary compact" type="button">📍 My addresses</button>
+        <button id="togglePreferences" class="btn secondary compact" type="button">🧺 Wash preferences</button>
+        <button id="authSignOut" class="btn secondary compact" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <section id="addressesPanel" class="account-panel hidden">
+      <h3>My addresses</h3>
+      <div id="savedAddressesList"></div>
+      <div class="account-panel-form">
+        <label>Save the current pickup address as <input id="newAddressLabel" placeholder="e.g. Home, Office"></label>
+        <button id="saveNewAddressBtn" class="btn secondary compact" type="button">Save address</button>
+      </div>
+      <p class="small">Fill in the pickup address and GPS pin below in step 2, then save it here with a label to reuse it next time.</p>
+    </section>
+
+    <section id="preferencesPanel" class="account-panel hidden">
+      <h3>Wash preferences</h3>
+      <div class="field-grid three">
+        <label>Water temperature
+          <select id="prefWaterTempSelect">
+            <option value="cold">Cold</option>
+            <option value="warm">Warm</option>
+            <option value="hot">Hot</option>
+          </select>
+        </label>
+        <label>Preferred detergent type <input id="prefDetergentType" placeholder="e.g. Downy, Ariel"></label>
+      </div>
+      <label class="check-line"><input id="prefFabricSoftener" type="checkbox"><span>Use fabric conditioner by default</span></label>
+      <label>Preferred fabric conditioner type <input id="prefFabricSoftenerType" placeholder="e.g. Downy"></label>
+      <label class="check-line"><input id="prefZonrox" type="checkbox"><span>Add Zonrox Color Safe by default</span></label>
+      <button id="savePreferencesBtn" class="btn primary compact" type="button">Save preferences</button>
+    </section>
+
     <section class="customer-hero">
       <img src="assets/banner.png" alt="Bubbly-fi Laundry Shop">
       <div>
@@ -29,6 +72,7 @@
 
     <div id="loadingCard" class="notice-card">Loading current services and prices…</div>
     <div id="errorCard" class="notice-card error hidden"></div>
+    <div id="hoursNotice" class="notice-card hidden"></div>
 
     <form id="bookingForm" class="booking-layout hidden" novalidate>
       <div class="booking-main">
@@ -62,6 +106,10 @@
           <div class="gps-box">
             <div><strong id="gpsStatus">Optional GPS area detection</strong><small id="gpsDetails">Use GPS to automatically identify the service area, or select the area manually.</small></div>
             <button id="captureGps" class="btn secondary" type="button">📍 Detect area with GPS</button>
+          </div>
+          <div id="pinMapWrap" class="pin-map-wrap hidden">
+            <p class="pin-map-hint">Drag the pin to your exact lobby or unit entrance for a smooth pickup.</p>
+            <div id="pinMap" class="pin-map"></div>
           </div>
           <a id="mapsLink" class="maps-link hidden" target="_blank" rel="noopener">Open captured pin in Google Maps ↗</a>
           <input id="gpsLat" type="hidden"><input id="gpsLng" type="hidden"><input id="mapsUrl" type="hidden">
@@ -204,6 +252,7 @@
   <footer>© Bubbly-fi Laundry Shop · Customer pickup booking</footer>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="customer.js"></script>
 </body>
 </html>

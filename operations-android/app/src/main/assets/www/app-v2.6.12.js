@@ -83,7 +83,7 @@ const payments = ['Cash','GCash','Maya','Bank Transfer','Unpaid'];
 
 let state = {
   session: null, profile: null, settings: { ...defaultSettings },
-  customers: [], orders: [], inventory: [], requests: [], page: 'dashboard',
+  customers: [], orders: [], inventory: [], requests: [], serviceAreas: [], page: 'dashboard',
   draft: { customerId: null, service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', delivery: false, quantity: 8, payment: 'Cash', detergentChoice: '', conditionerChoice: '', extraDry: false, extraWash: false, warmHotWash: false, zonroxColorsafe: false, extraDetergent: false, extraConditioner: false },
   channels: [], notifiedRequestIds: new Set(), latestRequestId: null, soundVoiceEnabled: false
 };
@@ -610,26 +610,28 @@ function showApp() {
 }
 async function loadCloudData() {
   setSaveStatus('Loading cloud…','saving');
-  const [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes] = await Promise.all([
+  const [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes, serviceAreasRes] = await Promise.all([
     sb.from('settings').select('*').eq('id',1).single(),
     sb.from('customers').select('*').order('name'),
     sb.from('orders').select('*,customers(name,phone)').order('created_at',{ascending:false}),
     sb.from('inventory').select('*').order('name'),
-    sb.from('customer_order_requests').select('*').order('created_at',{ascending:false})
+    sb.from('customer_order_requests').select('*').order('created_at',{ascending:false}),
+    sb.from('service_areas').select('*').order('radius_m')
   ]);
-  for (const r of [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes]) if (r.error) throw r.error;
+  for (const r of [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes, serviceAreasRes]) if (r.error) throw r.error;
   state.settings = { ...defaultSettings, ...settingsRes.data };
   state.customers = customersRes.data || [];
   state.orders = ordersRes.data || [];
   state.inventory = inventoryRes.data || [];
   state.requests = requestsRes.data || [];
+  state.serviceAreas = serviceAreasRes.data || [];
   const walkin = state.customers.find(c => c.name === 'Walk-in Customer');
   if (walkin) state.draft.customerId = walkin.id;
   setSaveStatus('Saved in cloud');
 }
 function subscribeRealtime() {
   state.channels.forEach(ch => sb.removeChannel(ch)); state.channels = [];
-  ['customers','orders','inventory','settings'].forEach(table => {
+  ['customers','orders','inventory','settings','service_areas'].forEach(table => {
     const ch = sb.channel(`bubblyfi-${table}`).on('postgres_changes',{event:'*',schema:'public',table}, async () => {
       try { await loadCloudData(); renderAll(); } catch(e) { console.error(e); }
     }).subscribe(); state.channels.push(ch);
@@ -973,7 +975,32 @@ function renderSettings(){const s=state.settings;[
   ['addonExtraDry','addon_extra_dry'],['addonExtraWash','addon_extra_wash'],['addonWarmHotWash','addon_warm_hot_wash'],['addonZonroxColorsafe','addon_zonrox_colorsafe'],
   ['defaultDetergentPrice','default_detergent_price'],['defaultConditionerPrice','default_conditioner_price'],['fullServiceDiscount','full_service_discount'],
   ['deliveryStandard','delivery_standard'],['deliveryMplace','delivery_mplace']
-].forEach(([id,key])=>{const el=$('#'+id);if(el)el.value=s[key]??0;});syncOutsidePriceFields();}
+].forEach(([id,key])=>{const el=$('#'+id);if(el)el.value=s[key]??0;});syncOutsidePriceFields();
+  $('#bookingOpenTime').value=(s.booking_open_time||'07:30').slice(0,5);
+  $('#bookingCloseTime').value=(s.booking_close_time||'19:30').slice(0,5);
+  $('#sameDayCutoffTime').value=(s.same_day_cutoff_time||'15:00').slice(0,5);
+  const mask=Number(s.booking_days_mask??127);
+  $$('[data-day-bit]').forEach(el=>{el.checked=(mask&(1<<Number(el.dataset.dayBit)))!==0;});
+  renderServiceAreas();
+}
+function renderServiceAreas(){
+  const box=$('#serviceAreasBody'); if(!box) return;
+  box.innerHTML=state.serviceAreas.length?state.serviceAreas.map(a=>`<div class="service-area-row"><strong>${escapeHtml(a.name)}</strong><span>${a.code} · ${a.center_lat}, ${a.center_lng} · ${a.radius_m} m · ${a.is_active?'Active':'Inactive'}</span><div class="row-actions"><button data-edit-area="${a.id}">Edit</button><button data-toggle-area="${a.id}">${a.is_active?'Deactivate':'Activate'}</button></div></div>`).join(''):'<p class="small">No service areas configured.</p>';
+}
+function clearServiceAreaForm(){$('#serviceAreaId').value='';$('#serviceAreaName').value='';$('#serviceAreaCode').value='';$('#serviceAreaLat').value='';$('#serviceAreaLng').value='';$('#serviceAreaRadius').value='';}
+async function saveServiceArea(event){
+  event.preventDefault();
+  if(!isAdmin())return toast('Only Admin can edit service areas.');
+  const id=$('#serviceAreaId').value;
+  const payload={
+    name:$('#serviceAreaName').value.trim(), code:$('#serviceAreaCode').value.trim().toLowerCase(),
+    center_lat:Number($('#serviceAreaLat').value), center_lng:Number($('#serviceAreaLng').value),
+    radius_m:Number($('#serviceAreaRadius').value), updated_at:new Date().toISOString()
+  };
+  const { error } = id ? await sb.from('service_areas').update(payload).eq('id',id) : await sb.from('service_areas').insert(payload);
+  if(error){toast(error.message);return;}
+  toast('Service area saved'); clearServiceAreaForm(); await loadCloudData(); renderAll();
+}
 let settingsTimer;
 async function autosaveSettings(){if(!isAdmin())return;syncOutsidePriceFields();clearTimeout(settingsTimer);settingsTimer=setTimeout(async()=>{const washCubao=Number($('#priceWashCubao').value),wdoCubao=Number($('#priceWdoCubao').value),wdfCubao=Number($('#priceWdfCubao').value),washOnlyCubao=Number($('#priceWashOnlyCubao').value),dryOnlyCubao=Number($('#priceDryOnlyCubao').value),foldOnlyCubao=Number($('#priceFoldOnlyCubao').value);const payload={
   price_wash_cubao:washCubao,price_wash_mplace:Number($('#priceWashMplace').value),price_wash_outside:washCubao,capacity_wash:Number($('#capacityWash').value),
@@ -984,7 +1011,11 @@ async function autosaveSettings(){if(!isAdmin())return;syncOutsidePriceFields();
   price_fold_only_cubao:foldOnlyCubao,price_fold_only_mplace:Number($('#priceFoldOnlyMplace').value),price_fold_only_outside:foldOnlyCubao,capacity_fold_only:Number($('#capacityFoldOnly').value),
   addon_extra_dry:Number($('#addonExtraDry').value),addon_extra_wash:Number($('#addonExtraWash').value),addon_warm_hot_wash:Number($('#addonWarmHotWash').value),addon_zonrox_colorsafe:Number($('#addonZonroxColorsafe').value),
   default_detergent_price:Number($('#defaultDetergentPrice').value),default_conditioner_price:Number($('#defaultConditionerPrice').value),full_service_discount:Number($('#fullServiceDiscount').value),
-  delivery_standard:Number($('#deliveryStandard').value),delivery_mplace:Number($('#deliveryMplace').value),updated_by:state.profile.id
+  delivery_standard:Number($('#deliveryStandard').value),delivery_mplace:Number($('#deliveryMplace').value),
+  booking_open_time:$('#bookingOpenTime').value||'07:30',booking_close_time:$('#bookingCloseTime').value||'19:30',
+  same_day_cutoff_time:$('#sameDayCutoffTime').value||'15:00',
+  booking_days_mask:$$('[data-day-bit]').reduce((mask,el)=>el.checked?mask|(1<<Number(el.dataset.dayBit)):mask,0),
+  updated_by:state.profile.id
 };setSaveStatus('Saving controls…','saving');const{error}=await sb.from('settings').update(payload).eq('id',1);if(error){setSaveStatus('Save failed','error');toast(error.message);return;}state.settings={...state.settings,...payload};setSaveStatus('Saved in cloud');toast('Controls saved');renderPosChoices();},650);}
 function renderAll(){const blankInventoryForm=!$('#inventoryId').value&&!$('#inventoryName').value.trim();renderPage();renderDashboard();renderPosChoices();renderOrders();renderRequests();renderCustomers();renderInventory();renderSettings();if(blankInventoryForm)$('#inventoryCustomerPrice').value=defaultInventoryCustomerPrice($('#inventoryCategory').value);updateInventoryPriceField(false);}
 
@@ -1034,6 +1065,13 @@ function bindEvents(){
   $('#inventoryForm').addEventListener('submit',saveInventory);$('#clearInventoryBtn').addEventListener('click',clearInventoryForm);$('#inventoryCategory').addEventListener('change',()=>updateInventoryPriceField(true));
   $('#inventoryBody').addEventListener('click',async e=>{const edit=e.target.dataset.editInventory,toggle=e.target.dataset.toggleInventory;if(edit){const i=state.inventory.find(x=>x.id===edit);$('#inventoryId').value=i.id;$('#inventoryName').value=i.name;$('#inventoryCategory').value=i.category;$('#inventoryStock').value=i.stock;$('#inventoryReorder').value=i.reorder_level;$('#inventoryCost').value=i.unit_cost;$('#inventoryCustomerPrice').value=Number(i.customer_price_per_load)||0;$('#inventoryConsumption').value=Number(i.consumption_per_load??1);$('#inventoryFormTitle').textContent='Edit item';updateInventoryPriceField(false);}if(toggle){if(!isAdmin())return toast('Only Admin can activate or inactivate inventory items.');const i=state.inventory.find(x=>x.id===toggle),next=i.is_active===false;const{error}=await sb.from('inventory').update({is_active:next,updated_by:state.profile.id}).eq('id',toggle);if(error)toast(error.message);else{await logAction(next?'inventory_activated':'inventory_inactivated','inventory',toggle,{});toast(next?'Item activated':'Item marked inactive');await loadCloudData();renderAll();}}});
   $('#settingsForm').addEventListener('input',autosaveSettings);
+  $('#serviceAreaForm').addEventListener('submit',saveServiceArea);
+  $('#clearServiceAreaBtn').addEventListener('click',clearServiceAreaForm);
+  $('#serviceAreasBody').addEventListener('click',async e=>{
+    const editId=e.target.dataset.editArea, toggleId=e.target.dataset.toggleArea;
+    if(editId){const a=state.serviceAreas.find(x=>x.id===editId);if(!a)return;$('#serviceAreaId').value=a.id;$('#serviceAreaName').value=a.name;$('#serviceAreaCode').value=a.code;$('#serviceAreaLat').value=a.center_lat;$('#serviceAreaLng').value=a.center_lng;$('#serviceAreaRadius').value=a.radius_m;}
+    if(toggleId){if(!isAdmin())return toast('Only Admin can edit service areas.');const a=state.serviceAreas.find(x=>x.id===toggleId);const{error}=await sb.from('service_areas').update({is_active:!a.is_active,updated_at:new Date().toISOString()}).eq('id',toggleId);if(error)toast(error.message);else{toast(a.is_active?'Area deactivated':'Area activated');await loadCloudData();renderAll();}}
+  });
   window.addEventListener('online',()=>{$('#connectionBadge').textContent='● Online';$('#connectionBadge').className='connection online';});
   window.addEventListener('offline',()=>{$('#connectionBadge').textContent='● Offline';$('#connectionBadge').className='connection offline';setSaveStatus('Offline — changes cannot save','error');});
 }

@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "318476668856",
+    "project_id": "bubblyfi-laundry",
+    "storage_bucket": "bubblyfi-laundry.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318476668856:android:3f8d77cea600cd30dcc94d",
+        "android_client_info": {
+          "package_name": "ph.bubblyfi.customer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDIZou8Dyit8Jb2YpC_nbifAsIUIOH4aSU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:318476668856:android:350eb1da9034c06fdcc94d",
+        "android_client_info": {
+          "package_name": "ph.bubblyfi.operations"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDIZou8Dyit8Jb2YpC_nbifAsIUIOH4aSU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -83,6 +83,11 @@
             <label>Mobile number <input id="phone" required autocomplete="tel" inputmode="tel" placeholder="09XXXXXXXXX or +639XXXXXXXXX" maxlength="20"></label>
           </div>
           <label>Email address <input id="email" type="email" autocomplete="email" placeholder="Optional"></label>
+          <button id="showReferralBtn" class="btn secondary compact" type="button">🎁 Refer a friend</button>
+          <div id="referralPanel" class="referral-panel hidden">
+            <p>Share your code. When a friend completes their first booking with it, you get a ₱50 coupon and they get 10% off!</p>
+            <div class="referral-code-row"><strong id="referralCode">—</strong><button id="shareReferralBtn" class="btn primary compact" type="button">Share</button></div>
+          </div>
         </section>
 
         <section class="step-card">
@@ -190,6 +195,8 @@
             <img src="assets/gcash.jpg" alt="Bubbly-fi GCash payment QR code" class="gcash-image">
             <div class="payment-fields">
               <div class="payment-total"><span>Amount to pay</span><strong id="paymentTotal">₱0</strong></div>
+              <label>Coupon or referral code <em>(optional)</em><input id="couponCode" placeholder="e.g. BUBBLYNEW"></label>
+              <p id="couponStatus" class="coupon-status"></p>
               <label>GCash reference number <input id="paymentReference" required inputmode="numeric" placeholder="Enter the reference number"></label>
               <label class="upload-card compact">
                 <span>Payment screenshot</span><small>Choose your saved GCash screenshot from Photos or Files</small>
@@ -217,6 +224,7 @@
           <div><span>Fabric conditioner</span><strong id="summaryConditioner">₱0</strong></div>
           <div><span>Add-ons</span><strong id="summaryAddons">₱0</strong></div>
           <div><span>Delivery</span><strong id="summaryDelivery">₱0</strong></div>
+          <div id="summaryDiscountRow" class="hidden"><span>Discount</span><strong id="summaryDiscount">₱0</strong></div>
           <p class="delivery-note">Outside Cubao: LalaMove fee is quoted and paid separately, so it is not included in the displayed total.</p>
         </div>
         <div class="grand-total"><span>Total</span><strong id="summaryTotal">₱0</strong></div>

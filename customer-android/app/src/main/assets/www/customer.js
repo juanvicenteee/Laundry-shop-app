@@ -141,7 +141,8 @@ const state = {
   settings: { ...defaults }, products: [], service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', quantity: 8,
   detergentSource: '', detergentItemId: '', conditionerSource: '', conditionerItemId: '',
   extraDry: false, extraWash: false, warmHotWash: false, zonroxColorsafe: false, extraDetergent: false, extraConditioner: false, deliveryRequested: true,
-  gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false, lastFcmToken: '', accountPhone: '', savedAddresses: [], washPrefs: null
+  gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false, lastFcmToken: '', accountPhone: '', savedAddresses: [], washPrefs: null,
+  coupon: { valid: false, kind: '', amount: 0, code: '' }
 };
 
 function toast(message) {
@@ -239,7 +240,11 @@ function calculate() {
   const addons = loads * (extraDryRate + extraWashRate + warmRate + zonroxRate + extraDetergentRate + extraConditionerRate);
   const discount = isFullServiceSelection() ? loads * settingNumber('full_service_discount') : 0;
   const delivery = state.deliveryRequested && state.place !== 'outside' ? settingNumber(state.place === 'mplace' ? 'delivery_mplace' : 'delivery_standard') : 0;
-  return { loads, rate, base, detergent, conditioner, detergentTotal, conditionerTotal, addons, discount, delivery, total:Math.max(0,base+detergentTotal+conditionerTotal+addons-discount)+delivery, unit:currentLoadType().unit };
+  const subtotalBeforeCoupon = Math.max(0,base+detergentTotal+conditionerTotal+addons-discount)+delivery;
+  const couponDiscount = state.coupon.valid
+    ? (state.coupon.kind === 'percent' ? Math.round(subtotalBeforeCoupon * state.coupon.amount) / 100 : Math.min(state.coupon.amount, subtotalBeforeCoupon))
+    : 0;
+  return { loads, rate, base, detergent, conditioner, detergentTotal, conditionerTotal, addons, discount, delivery, couponDiscount, total:Math.max(0, subtotalBeforeCoupon - couponDiscount), unit:currentLoadType().unit };
 }
 
 async function loadOptions() {
@@ -291,6 +296,8 @@ function renderSummary() {
   $('#summaryQuantity').textContent=`${state.quantity} ${calc.unit} · ${currentLoadType().label}`;$('#summaryLoads').textContent=calc.loads;$('#summaryPlace').textContent=places[state.place];$('#summaryBase').textContent=peso.format(calc.base);
   $('#summaryDetergent').textContent=`${calc.detergent.name} · ${peso.format(calc.detergentTotal)}`;$('#summaryConditioner').textContent=`${calc.conditioner.name} · ${peso.format(calc.conditionerTotal)}`;$('#summaryAddons').textContent=peso.format(calc.addons);
   $('#summaryDelivery').textContent=state.deliveryRequested&&state.place==='outside'?'LalaMove rate (not included)':peso.format(calc.delivery);$('#summaryTotal').textContent=peso.format(calc.total);$('#paymentTotal').textContent=peso.format(calc.total);
+  $('#summaryDiscountRow')?.classList.toggle('hidden', !calc.couponDiscount);
+  if ($('#summaryDiscount')) $('#summaryDiscount').textContent = `-${peso.format(calc.couponDiscount)}`;
 }
 function renderAll() { renderServices(); renderProducts(); renderAddons(); renderSummary(); }
 
@@ -496,6 +503,50 @@ async function linkAccountPhone(phone) {
   }
 }
 
+let couponCheckTimer;
+function checkCouponLive() {
+  clearTimeout(couponCheckTimer);
+  couponCheckTimer = setTimeout(async () => {
+    const code = $('#couponCode').value.trim();
+    const phone = normalizePhilippineMobile($('#phone').value);
+    if (!code || !phone) { state.coupon = { valid: false, kind: '', amount: 0, code: '' }; $('#couponStatus').textContent = ''; renderSummary(); return; }
+    try {
+      const { data, error } = await sb.rpc('check_coupon', { p_code: code, p_phone: phone });
+      if (error) throw error;
+      state.coupon = { valid: Boolean(data?.valid), kind: data?.kind || '', amount: Number(data?.amount) || 0, code };
+      $('#couponStatus').textContent = data?.message || '';
+      $('#couponStatus').classList.toggle('coupon-valid', state.coupon.valid);
+      $('#couponStatus').classList.toggle('coupon-invalid', !state.coupon.valid);
+    } catch (error) {
+      state.coupon = { valid: false, kind: '', amount: 0, code: '' };
+      $('#couponStatus').textContent = error.message || 'Could not check this code.';
+    }
+    renderSummary();
+  }, 500);
+}
+async function showReferralPanel() {
+  const phone = normalizePhilippineMobile($('#phone').value);
+  if (!phone) { toast('Enter your mobile number first.'); return; }
+  try {
+    const { data, error } = await sb.rpc('get_or_create_referral_code', { p_phone: phone });
+    if (error) throw error;
+    $('#referralCode').textContent = data;
+    $('#referralPanel').classList.remove('hidden');
+  } catch (error) {
+    toast(error.message || 'Could not get your referral code.');
+  }
+}
+async function shareReferralCode() {
+  const code = $('#referralCode').textContent;
+  if (!code || code === '—') return;
+  const text = `Try Bubbly-fi Laundry Shop! Use my referral code ${code} for 10% off your first booking. Book here: https://m.me/bubblyfi`;
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; } catch { /* user cancelled or unsupported, fall through */ }
+  }
+  try { await navigator.clipboard.writeText(text); toast('Referral message copied — paste it to share!'); }
+  catch { toast(`Share this code: ${code}`); }
+}
+
 const NOTIF_PREF_KEY = 'bubblyfi-notif-prefs';
 function loadNotifPrefs() {
   try { return { sound: true, vibrate: true, ...JSON.parse(localStorage.getItem(NOTIF_PREF_KEY) || '{}') }; }
@@ -618,7 +669,7 @@ async function submitBooking(event) {
 
     submitStage = 'booking';
     $('#submitStatus').textContent = 'Saving your booking securely…';
-    const { data, error } = await sb.rpc('submit_customer_order', { p_payload: payload });
+    const { data, error } = await sb.rpc('submit_customer_order', { p_payload: payload, p_coupon_code: state.coupon.valid ? state.coupon.code : null });
     if (error) throw new Error(explainSupabaseError(error, 'booking'));
     $('#bookingForm').classList.add('hidden');
     $('#successRequestNo').textContent = data.request_no;
@@ -710,6 +761,9 @@ function bindEvents() {
   $('#saveNewAddressBtn')?.addEventListener('click', saveNewAddress);
   $('#savePreferencesBtn')?.addEventListener('click', saveWashPreferences);
   $('#pickupAt')?.addEventListener('change', saveDraftForCurrentSlot);
+  $('#couponCode')?.addEventListener('input', checkCouponLive);
+  $('#showReferralBtn')?.addEventListener('click', showReferralPanel);
+  $('#shareReferralBtn')?.addEventListener('click', shareReferralCode);
   $('#savedAddressesList')?.addEventListener('click', event => {
     const useBtn = event.target.closest('[data-use-address]');
     const deleteBtn = event.target.closest('[data-delete-address]');

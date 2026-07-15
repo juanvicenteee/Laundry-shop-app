@@ -210,3 +210,28 @@ Deploy the new function:
 ```bash
 supabase functions deploy send-marketing-broadcast --no-verify-jwt
 ```
+
+## v8 — referral codes + first-order discount
+
+`migrate-mobile-app-v8-referrals-coupons.sql` adds one unified
+"coupon or referral code" field, checked via `check_coupon(code, phone)`
+and applied inside `submit_customer_order` via a new optional
+`p_coupon_code` parameter (added as a trailing default-valued
+parameter, so it doesn't disturb the v3 signature). Three kinds of
+code, all typed into the same input:
+
+- **`BUBBLYNEW`** — global, 10% off, valid only for a phone's first
+  booking.
+- **A referral code** (`referral_codes`, one per customer, auto-created
+  via `get_or_create_referral_code`) — also 10% off, also
+  first-booking-only, and issues the referrer a ₱50 flat coupon **once
+  the referred customer's booking is actually submitted** (not merely
+  when the code is typed in) — this ties the reward to a completed
+  booking rather than letting someone claim it without ever booking.
+- **A personal coupon** (`coupons`, e.g. the ₱50 referral reward) —
+  flat or percent, single-use, phone-scoped.
+
+The discount is applied as an `UPDATE` after the insert, since the
+existing pricing trigger already computed `total` and its internals
+aren't something this migration should guess at and risk breaking. No
+setup beyond running the SQL — no new Edge Function or secret needed.

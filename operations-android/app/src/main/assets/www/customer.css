@@ -37,3 +37,11 @@
 .account-panel-form label{flex:1;min-width:180px}
 .saved-address-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #eef4f6}
 .saved-address-row small{display:block;color:#5c7c86;font-size:.78rem}
+
+.referral-panel{margin-top:10px;padding:12px 14px;border-radius:10px;background:#fff9df;border:1px solid #f4e2a0}
+.referral-panel p{margin:0 0 8px;font-size:.82rem;color:#6b5100}
+.referral-code-row{display:flex;align-items:center;gap:10px}
+.referral-code-row strong{font-size:1.1rem;letter-spacing:.05em;color:#5c4300}
+.coupon-status{margin:4px 0 0;font-size:.8rem}
+.coupon-status.coupon-valid{color:#1a7a3c}
+.coupon-status.coupon-invalid{color:#b33a3a}

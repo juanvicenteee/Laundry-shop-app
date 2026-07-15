@@ -302,3 +302,41 @@ OAuth — a split the signing-up user can't spoof.
 
 Safe to run again even though it's already live — `create or replace`
 is idempotent. No setup beyond running the SQL.
+
+## v10 — dedupe guard logic + build the missing marketing send path
+
+`migrate-mobile-app-v10-dedupe-and-marketing.sql` is the second and
+final piece of the reconciliation with the pre-existing ChatGPT-built
+backend (see the warning at the top of this file). Two things:
+
+1. **Simplifies `mobile_request_guard()`.** It previously duplicated
+   business-hours/same-day-cutoff enforcement that `submit_customer_order()`
+   already does (reading a *different* settings table — `mobile_app_settings`
+   vs `settings`, the one the ops app's Controls page actually edits) —
+   removed. It also classified area from `pin_lat`/`pin_lng`, columns
+   nothing writes to (the client only ever populates `gps_lat`/`gps_lng`,
+   already correctly classified by the pre-existing, pricing-critical
+   `customer_request_area_from_gps` trigger) — removed. The one thing
+   this trigger still uniquely does: block outside-Cubao bookings
+   entirely when `mobile_app_settings.allow_outside` is off — a real,
+   currently-enforced toggle that had no UI anywhere until this
+   migration's client-side companion change added one to the ops app's
+   Controls page.
+2. **Builds the marketing broadcast send path.** `marketing_campaigns`
+   existed as a log table with no sender anywhere (SQL or Edge
+   Function) — confirmed via diagnostic queries during this session.
+   Adds `count_marketing_recipients(area)` / `broadcast_marketing(area,
+   title, body)` RPCs (admin-only, gated on `is_bubblyfi_admin()`)
+   targeting the real `device_push_tokens`/`notification_preferences`
+   tables, paired with a retargeted `send-marketing-broadcast` Edge
+   Function that reuses the FCM-sending helper already extracted to
+   `_shared/fcm.ts` in v6. The ops app's Broadcast panel already calls
+   these exact RPC names (from the original, never-applied v7) so no
+   client change was needed there.
+
+### One-time setup
+
+Deploy the retargeted function:
+```bash
+supabase functions deploy send-marketing-broadcast --no-verify-jwt
+```

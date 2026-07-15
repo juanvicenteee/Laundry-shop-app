@@ -160,3 +160,35 @@ conditioner, Zonrox Color Safe). Both are owner-scoped via RLS
 (`customer_profile_id = auth.uid()`) rather than RPCs — the client
 reads/writes the tables directly through a signed-in session. Only
 available once an account exists (v4); no setup beyond running the SQL.
+
+## v6 — abandoned-cart reminders
+
+`migrate-mobile-app-v6-cart-recovery.sql` adds `booking_drafts` (one row
+per device, keyed by FCM token — works for guests, no account needed),
+written via `save_booking_draft(...)` as soon as a pickup slot is
+chosen, and cleared via `clear_booking_draft(...)` on successful
+submit. A `pg_cron` job runs every 5 minutes calling the new
+`send-cart-abandonment-reminders` Edge Function, which pushes "Your
+laundry basket is full! Complete your booking now." to any draft older
+than 30 minutes with no reminder sent yet.
+
+Also extracted the FCM-sending logic (JWT signing, token exchange,
+`sendFcm`) out of `send-push-notification` into a shared
+`supabase/functions/_shared/fcm.ts` module, since this is now the
+second function that needs it.
+
+### One-time setup
+
+1. Run the SQL. If `create extension pg_cron;` errors with a
+   permissions message, enable it yourself first via Supabase Dashboard
+   → Database → Extensions → pg_cron, then re-run just the migration's
+   "3. Scheduled job" section.
+2. Deploy the new function:
+   ```bash
+   supabase functions deploy send-cart-abandonment-reminders --no-verify-jwt
+   ```
+3. Re-deploy `send-push-notification` too, since it now imports from
+   `_shared/fcm.ts`:
+   ```bash
+   supabase functions deploy send-push-notification --no-verify-jwt
+   ```

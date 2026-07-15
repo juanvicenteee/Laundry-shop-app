@@ -141,7 +141,7 @@ const state = {
   settings: { ...defaults }, products: [], service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', quantity: 8,
   detergentSource: '', detergentItemId: '', conditionerSource: '', conditionerItemId: '',
   extraDry: false, extraWash: false, warmHotWash: false, zonroxColorsafe: false, extraDetergent: false, extraConditioner: false, deliveryRequested: true,
-  gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false
+  gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false, lastFcmToken: '', accountPhone: '', savedAddresses: [], washPrefs: null
 };
 
 function toast(message) {
@@ -514,10 +514,37 @@ async function upsertDevice(phone, fcmToken) {
     console.warn('Could not register this device for push notifications:', error);
   }
 }
+window.onFcmToken = token => { if (token) state.lastFcmToken = token; };
+function fetchFcmTokenEarly() {
+  window.AndroidBridge?.getFcmToken?.();
+}
 function registerDeviceForPush(phone) {
+  if (state.lastFcmToken) { upsertDevice(phone, state.lastFcmToken); return; }
   if (!window.AndroidBridge?.getFcmToken) return;
   window.onFcmToken = token => { if (token) { state.lastFcmToken = token; upsertDevice(phone, token); } };
   window.AndroidBridge.getFcmToken();
+}
+function draftSummary() {
+  return { service: state.service, quantity: state.quantity, place: state.place, full_service: state.fullService };
+}
+async function saveDraftForCurrentSlot() {
+  if (!state.lastFcmToken) return;
+  const pickupValue = $('#pickupAt')?.value;
+  if (!pickupValue) return;
+  try {
+    await sb.rpc('save_booking_draft', {
+      p_fcm_token: state.lastFcmToken,
+      p_slot: new Date(pickupValue).toISOString(),
+      p_summary: draftSummary()
+    });
+  } catch (error) {
+    console.warn('Could not save booking draft:', error);
+  }
+}
+async function clearDraft() {
+  if (!state.lastFcmToken) return;
+  try { await sb.rpc('clear_booking_draft', { p_fcm_token: state.lastFcmToken }); }
+  catch (error) { console.warn('Could not clear booking draft:', error); }
 }
 function renderNotifSettings(phone) {
   const box = $('#notifSettings');
@@ -602,6 +629,7 @@ async function submitBooking(event) {
     renderNotifSettings(payload.phone);
     registerDeviceForPush(payload.phone);
     linkAccountPhone(payload.phone);
+    clearDraft();
   } catch (error) {
     console.error(error);
     const message = error?.message || explainSupabaseError(error, submitStage);
@@ -681,6 +709,7 @@ function bindEvents() {
   $('#togglePreferences')?.addEventListener('click', () => { $('#addressesPanel').classList.add('hidden'); $('#preferencesPanel').classList.toggle('hidden'); });
   $('#saveNewAddressBtn')?.addEventListener('click', saveNewAddress);
   $('#savePreferencesBtn')?.addEventListener('click', saveWashPreferences);
+  $('#pickupAt')?.addEventListener('change', saveDraftForCurrentSlot);
   $('#savedAddressesList')?.addEventListener('click', event => {
     const useBtn = event.target.closest('[data-use-address]');
     const deleteBtn = event.target.closest('[data-delete-address]');
@@ -689,7 +718,7 @@ function bindEvents() {
   });
 }
 
-setDefaultPickup(); bindEvents(); refreshAuthUi();
+setDefaultPickup(); bindEvents(); refreshAuthUi(); fetchFcmTokenEarly();
 loadOptions().catch(error => {
   console.error(error); $('#loadingCard').classList.add('hidden'); $('#errorCard').textContent=error.message; $('#errorCard').classList.remove('hidden');
 });

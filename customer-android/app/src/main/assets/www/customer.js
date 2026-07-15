@@ -141,8 +141,7 @@ const state = {
   settings: { ...defaults }, products: [], service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', quantity: 8,
   detergentSource: '', detergentItemId: '', conditionerSource: '', conditionerItemId: '',
   extraDry: false, extraWash: false, warmHotWash: false, zonroxColorsafe: false, extraDetergent: false, extraConditioner: false, deliveryRequested: true,
-  gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false, lastFcmToken: '', accountPhone: '', savedAddresses: [], washPrefs: null,
-  coupon: { valid: false, kind: '', amount: 0, code: '' }
+  gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false, lastFcmToken: '', accountPhone: '', referralCode: '', savedAddresses: [], washPrefs: null
 };
 
 function toast(message) {
@@ -240,11 +239,12 @@ function calculate() {
   const addons = loads * (extraDryRate + extraWashRate + warmRate + zonroxRate + extraDetergentRate + extraConditionerRate);
   const discount = isFullServiceSelection() ? loads * settingNumber('full_service_discount') : 0;
   const delivery = state.deliveryRequested && state.place !== 'outside' ? settingNumber(state.place === 'mplace' ? 'delivery_mplace' : 'delivery_standard') : 0;
-  const subtotalBeforeCoupon = Math.max(0,base+detergentTotal+conditionerTotal+addons-discount)+delivery;
-  const couponDiscount = state.coupon.valid
-    ? (state.coupon.kind === 'percent' ? Math.round(subtotalBeforeCoupon * state.coupon.amount) / 100 : Math.min(state.coupon.amount, subtotalBeforeCoupon))
-    : 0;
-  return { loads, rate, base, detergent, conditioner, detergentTotal, conditionerTotal, addons, discount, delivery, couponDiscount, total:Math.max(0, subtotalBeforeCoupon - couponDiscount), unit:currentLoadType().unit };
+  // Coupon/referral discounts are computed server-side by
+  // apply_mobile_booking_discount() *after* submit (it needs to know
+  // whether this is the account's first booking), so there is no
+  // client-side preview here — the summary shows the pre-discount total
+  // and the success screen shows the final amount once applied.
+  return { loads, rate, base, detergent, conditioner, detergentTotal, conditionerTotal, addons, discount, delivery, total:Math.max(0,base+detergentTotal+conditionerTotal+addons-discount)+delivery, unit:currentLoadType().unit };
 }
 
 async function loadOptions() {
@@ -296,8 +296,6 @@ function renderSummary() {
   $('#summaryQuantity').textContent=`${state.quantity} ${calc.unit} · ${currentLoadType().label}`;$('#summaryLoads').textContent=calc.loads;$('#summaryPlace').textContent=places[state.place];$('#summaryBase').textContent=peso.format(calc.base);
   $('#summaryDetergent').textContent=`${calc.detergent.name} · ${peso.format(calc.detergentTotal)}`;$('#summaryConditioner').textContent=`${calc.conditioner.name} · ${peso.format(calc.conditionerTotal)}`;$('#summaryAddons').textContent=peso.format(calc.addons);
   $('#summaryDelivery').textContent=state.deliveryRequested&&state.place==='outside'?'LalaMove rate (not included)':peso.format(calc.delivery);$('#summaryTotal').textContent=peso.format(calc.total);$('#paymentTotal').textContent=peso.format(calc.total);
-  $('#summaryDiscountRow')?.classList.toggle('hidden', !calc.couponDiscount);
-  if ($('#summaryDiscount')) $('#summaryDiscount').textContent = `-${peso.format(calc.couponDiscount)}`;
 }
 function renderAll() { renderServices(); renderProducts(); renderAddons(); renderSummary(); }
 
@@ -388,14 +386,19 @@ async function refreshAuthUi() {
   const session = data?.session;
   $('#authSignedOut')?.classList.toggle('hidden', Boolean(session));
   $('#authSignedIn')?.classList.toggle('hidden', !session);
+  $('#couponPanel')?.classList.toggle('hidden', !session);
+  $('#couponSignInNote')?.classList.toggle('hidden', Boolean(session));
   if (session) {
-    const { data: profile } = await sb.from('customer_profiles').select('display_name,phone').eq('id', session.user.id).maybeSingle();
-    if ($('#authName')) $('#authName').textContent = profile?.display_name || session.user.email || 'Bubbly-fi customer';
+    const { data: profile } = await sb.from('customer_profiles').select('full_name,phone,referral_code').eq('user_id', session.user.id).maybeSingle();
+    if ($('#authName')) $('#authName').textContent = profile?.full_name || session.user.email || 'Bubbly-fi customer';
     state.accountPhone = profile?.phone || '';
+    state.referralCode = profile?.referral_code || '';
     if (state.accountPhone && $('#phone')) $('#phone').value = state.accountPhone;
     await loadAccountExtras();
+    registerDeviceForPush();
   } else {
     state.accountPhone = '';
+    state.referralCode = '';
     $('#addressesPanel')?.classList.add('hidden');
     $('#preferencesPanel')?.classList.add('hidden');
   }
@@ -405,8 +408,8 @@ async function loadAccountExtras() {
   const session = data?.session;
   if (!session) { state.savedAddresses = []; state.washPrefs = null; return; }
   const [addressesRes, prefsRes] = await Promise.all([
-    sb.from('saved_addresses').select('*').eq('customer_profile_id', session.user.id).order('is_default', { ascending: false }),
-    sb.from('wash_preferences').select('*').eq('customer_profile_id', session.user.id).maybeSingle()
+    sb.from('customer_addresses').select('*').eq('user_id', session.user.id).order('is_default', { ascending: false }),
+    sb.from('customer_wash_preferences').select('*').eq('user_id', session.user.id).maybeSingle()
   ]);
   state.savedAddresses = addressesRes.data || [];
   state.washPrefs = prefsRes.data || null;
@@ -427,17 +430,19 @@ async function saveNewAddress() {
   const label = $('#newAddressLabel').value.trim();
   if (!label) return toast('Enter a label for this address, e.g. Home or Office.');
   const payload = {
-    customer_profile_id: session.user.id,
+    user_id: session.user.id,
     label,
+    area: state.place,
+    full_address: fullAddress(),
     address_line: $('#addressLine').value.trim(),
     building_unit: $('#buildingUnit').value.trim(),
     barangay: $('#barangay').value.trim(),
     city: $('#city').value.trim(),
     landmark: $('#landmark').value.trim(),
-    gps_lat: state.gpsLat || null,
-    gps_lng: state.gpsLng || null
+    latitude: state.gpsLat ? Number(state.gpsLat) : null,
+    longitude: state.gpsLng ? Number(state.gpsLng) : null
   };
-  const { error } = await sb.from('saved_addresses').insert(payload);
+  const { error } = await sb.from('customer_addresses').insert(payload);
   if (error) return toast(error.message);
   $('#newAddressLabel').value = '';
   toast('Address saved.');
@@ -451,8 +456,8 @@ function useSavedAddress(id) {
   $('#barangay').value = a.barangay || '';
   $('#city').value = a.city || '';
   $('#landmark').value = a.landmark || '';
-  if (a.gps_lat && a.gps_lng) {
-    state.gpsLat = String(a.gps_lat); state.gpsLng = String(a.gps_lng);
+  if (a.latitude && a.longitude) {
+    state.gpsLat = String(a.latitude); state.gpsLng = String(a.longitude);
     state.mapsUrl = `https://www.google.com/maps?q=${state.gpsLat},${state.gpsLng}`;
     $('#gpsLat').value = state.gpsLat; $('#gpsLng').value = state.gpsLng; $('#mapsUrl').value = state.mapsUrl;
     applyDetectedArea(state.gpsLat, state.gpsLng);
@@ -461,7 +466,7 @@ function useSavedAddress(id) {
   toast(`Using "${a.label}" address.`);
 }
 async function deleteSavedAddress(id) {
-  const { error } = await sb.from('saved_addresses').delete().eq('id', id);
+  const { error } = await sb.from('customer_addresses').delete().eq('id', id);
   if (error) return toast(error.message);
   toast('Address removed.');
   await loadAccountExtras();
@@ -469,7 +474,7 @@ async function deleteSavedAddress(id) {
 function renderWashPreferences() {
   const p = state.washPrefs;
   if (!$('#prefWaterTempSelect')) return;
-  $('#prefWaterTempSelect').value = p?.water_temp || 'cold';
+  $('#prefWaterTempSelect').value = p?.water_temperature || 'cold';
   $('#prefDetergentType').value = p?.detergent_type || '';
   $('#prefFabricSoftener').checked = Boolean(p?.fabric_softener);
   $('#prefFabricSoftenerType').value = p?.fabric_softener_type || '';
@@ -480,15 +485,15 @@ async function saveWashPreferences() {
   const session = data?.session;
   if (!session) return toast('Sign in to save wash preferences.');
   const payload = {
-    customer_profile_id: session.user.id,
-    water_temp: $('#prefWaterTempSelect').value || 'cold',
+    user_id: session.user.id,
+    water_temperature: $('#prefWaterTempSelect').value || 'cold',
     detergent_type: $('#prefDetergentType').value.trim(),
     fabric_softener: $('#prefFabricSoftener').checked,
     fabric_softener_type: $('#prefFabricSoftenerType').value.trim(),
     zonrox: $('#prefZonrox').checked,
     updated_at: new Date().toISOString()
   };
-  const { error } = await sb.from('wash_preferences').upsert(payload, { onConflict: 'customer_profile_id' });
+  const { error } = await sb.from('customer_wash_preferences').upsert(payload, { onConflict: 'user_id' });
   if (error) return toast(error.message);
   toast('Wash preferences saved.');
   state.washPrefs = payload;
@@ -497,44 +502,36 @@ async function linkAccountPhone(phone) {
   try {
     const { data } = await sb.auth.getSession();
     if (!data?.session) return;
-    await sb.rpc('update_my_customer_phone', { p_phone: phone });
+    await sb.from('customer_profiles').update({ phone }).eq('user_id', data.session.user.id);
   } catch (error) {
     console.warn('Could not link this phone to the signed-in account:', error);
   }
 }
 
-let couponCheckTimer;
-function checkCouponLive() {
-  clearTimeout(couponCheckTimer);
-  couponCheckTimer = setTimeout(async () => {
-    const code = $('#couponCode').value.trim();
-    const phone = normalizePhilippineMobile($('#phone').value);
-    if (!code || !phone) { state.coupon = { valid: false, kind: '', amount: 0, code: '' }; $('#couponStatus').textContent = ''; renderSummary(); return; }
-    try {
-      const { data, error } = await sb.rpc('check_coupon', { p_code: code, p_phone: phone });
-      if (error) throw error;
-      state.coupon = { valid: Boolean(data?.valid), kind: data?.kind || '', amount: Number(data?.amount) || 0, code };
-      $('#couponStatus').textContent = data?.message || '';
-      $('#couponStatus').classList.toggle('coupon-valid', state.coupon.valid);
-      $('#couponStatus').classList.toggle('coupon-invalid', !state.coupon.valid);
-    } catch (error) {
-      state.coupon = { valid: false, kind: '', amount: 0, code: '' };
-      $('#couponStatus').textContent = error.message || 'Could not check this code.';
-    }
-    renderSummary();
-  }, 500);
-}
-async function showReferralPanel() {
-  const phone = normalizePhilippineMobile($('#phone').value);
-  if (!phone) { toast('Enter your mobile number first.'); return; }
+async function applyBookingDiscount(requestNo) {
+  const code = $('#couponCode')?.value.trim();
+  if (!code) return;
   try {
-    const { data, error } = await sb.rpc('get_or_create_referral_code', { p_phone: phone });
+    const { data, error } = await sb.rpc('apply_mobile_booking_discount', {
+      p_request_no: requestNo,
+      p_coupon_code: code,
+      p_referral_code: code
+    });
     if (error) throw error;
-    $('#referralCode').textContent = data;
-    $('#referralPanel').classList.remove('hidden');
+    if (data?.discount_percent > 0) {
+      $('#successTotal').textContent = peso.format(data.total);
+      toast(`${data.discount_percent}% discount applied — new total ${peso.format(data.total)}.`);
+    } else {
+      toast('That code did not apply — it may not be valid for this booking.');
+    }
   } catch (error) {
-    toast(error.message || 'Could not get your referral code.');
+    toast(error.message || 'Could not apply that code.');
   }
+}
+function showReferralPanel() {
+  if (!state.referralCode) { toast('Sign in to get your referral code.'); return; }
+  $('#referralCode').textContent = state.referralCode;
+  $('#referralPanel').classList.remove('hidden');
 }
 async function shareReferralCode() {
   const code = $('#referralCode').textContent;
@@ -547,6 +544,11 @@ async function shareReferralCode() {
   catch { toast(`Share this code: ${code}`); }
 }
 
+// Push notifications require a signed-in account (device_push_tokens.user_id
+// is NOT NULL in the real backend) — guests don't get push, matching the
+// existing system's design. Sound/vibration are still cached locally too,
+// so the Kotlin notification-channel logic (BubblyfiMessagingService) works
+// even before the DB round-trip finishes.
 const NOTIF_PREF_KEY = 'bubblyfi-notif-prefs';
 function loadNotifPrefs() {
   try { return { sound: true, vibrate: true, ...JSON.parse(localStorage.getItem(NOTIF_PREF_KEY) || '{}') }; }
@@ -556,24 +558,27 @@ function saveNotifPrefs(prefs) {
   try { localStorage.setItem(NOTIF_PREF_KEY, JSON.stringify(prefs)); } catch {}
   window.AndroidBridge?.setNotificationPrefs?.(prefs.sound, prefs.vibrate);
 }
-async function upsertDevice(phone, fcmToken) {
+async function upsertDevice(fcmToken) {
   if (!fcmToken) return;
-  const prefs = loadNotifPrefs();
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  if (!session) return; // guests can't register — no user_id to attach the row to
   try {
-    await sb.rpc('upsert_customer_device', { p_phone: phone, p_fcm_token: fcmToken, p_sound: prefs.sound, p_vibration: prefs.vibrate, p_area: state.place });
+    await sb.from('device_push_tokens').upsert({
+      user_id: session.user.id, token: fcmToken, app_role: 'customer', area: state.place,
+      platform: 'android', active: true, last_seen_at: new Date().toISOString()
+    }, { onConflict: 'token' });
   } catch (error) {
     console.warn('Could not register this device for push notifications:', error);
   }
 }
-window.onFcmToken = token => { if (token) state.lastFcmToken = token; };
+window.onFcmToken = token => { if (token) { state.lastFcmToken = token; upsertDevice(token); } };
 function fetchFcmTokenEarly() {
   window.AndroidBridge?.getFcmToken?.();
 }
-function registerDeviceForPush(phone) {
-  if (state.lastFcmToken) { upsertDevice(phone, state.lastFcmToken); return; }
-  if (!window.AndroidBridge?.getFcmToken) return;
-  window.onFcmToken = token => { if (token) { state.lastFcmToken = token; upsertDevice(phone, token); } };
-  window.AndroidBridge.getFcmToken();
+function registerDeviceForPush() {
+  if (state.lastFcmToken) { upsertDevice(state.lastFcmToken); return; }
+  window.AndroidBridge?.getFcmToken?.();
 }
 function draftSummary() {
   return { service: state.service, quantity: state.quantity, place: state.place, full_service: state.fullService };
@@ -597,20 +602,35 @@ async function clearDraft() {
   try { await sb.rpc('clear_booking_draft', { p_fcm_token: state.lastFcmToken }); }
   catch (error) { console.warn('Could not clear booking draft:', error); }
 }
-function renderNotifSettings(phone) {
+async function renderNotifSettings() {
   const box = $('#notifSettings');
   if (!box) return;
-  const prefs = loadNotifPrefs();
+  const { data } = await sb.auth.getSession();
+  const session = data?.session;
+  if (!session) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
-  $('#notifSound').checked = prefs.sound;
-  $('#notifVibrate').checked = prefs.vibrate;
-  const update = () => {
-    const next = { sound: $('#notifSound').checked, vibrate: $('#notifVibrate').checked };
-    saveNotifPrefs(next);
-    upsertDevice(phone, state.lastFcmToken);
+  const { data: prefs } = await sb.from('notification_preferences').select('*').eq('user_id', session.user.id).maybeSingle();
+  $('#notifOrderUpdates').checked = prefs?.order_updates ?? true;
+  $('#notifRiderUpdates').checked = prefs?.rider_updates ?? true;
+  $('#notifMarketing').checked = prefs?.marketing ?? true;
+  $('#notifSound').checked = prefs?.sound ?? true;
+  $('#notifVibrate').checked = prefs?.vibration ?? true;
+  saveNotifPrefs({ sound: prefs?.sound ?? true, vibrate: prefs?.vibration ?? true });
+  const update = async () => {
+    const next = {
+      user_id: session.user.id,
+      order_updates: $('#notifOrderUpdates').checked,
+      rider_updates: $('#notifRiderUpdates').checked,
+      marketing: $('#notifMarketing').checked,
+      sound: $('#notifSound').checked,
+      vibration: $('#notifVibrate').checked,
+      updated_at: new Date().toISOString()
+    };
+    saveNotifPrefs({ sound: next.sound, vibrate: next.vibration });
+    const { error } = await sb.from('notification_preferences').upsert(next, { onConflict: 'user_id' });
+    if (error) toast(error.message);
   };
-  $('#notifSound').onchange = update;
-  $('#notifVibrate').onchange = update;
+  ['#notifOrderUpdates', '#notifRiderUpdates', '#notifMarketing', '#notifSound', '#notifVibrate'].forEach(sel => { $(sel).onchange = update; });
 }
 
 async function sendBookingNotifications(requestNo) {
@@ -669,7 +689,7 @@ async function submitBooking(event) {
 
     submitStage = 'booking';
     $('#submitStatus').textContent = 'Saving your booking securely…';
-    const { data, error } = await sb.rpc('submit_customer_order', { p_payload: payload, p_coupon_code: state.coupon.valid ? state.coupon.code : null });
+    const { data, error } = await sb.rpc('submit_customer_order', { p_payload: payload });
     if (error) throw new Error(explainSupabaseError(error, 'booking'));
     $('#bookingForm').classList.add('hidden');
     $('#successRequestNo').textContent = data.request_no;
@@ -677,9 +697,10 @@ async function submitBooking(event) {
     $('#successCard').classList.remove('hidden');
     window.scrollTo({ top:0, behavior:'smooth' });
     sendBookingNotifications(data.request_no);
-    renderNotifSettings(payload.phone);
-    registerDeviceForPush(payload.phone);
+    renderNotifSettings();
+    registerDeviceForPush();
     linkAccountPhone(payload.phone);
+    applyBookingDiscount(data.request_no);
     clearDraft();
   } catch (error) {
     console.error(error);
@@ -761,7 +782,6 @@ function bindEvents() {
   $('#saveNewAddressBtn')?.addEventListener('click', saveNewAddress);
   $('#savePreferencesBtn')?.addEventListener('click', saveWashPreferences);
   $('#pickupAt')?.addEventListener('change', saveDraftForCurrentSlot);
-  $('#couponCode')?.addEventListener('input', checkCouponLive);
   $('#showReferralBtn')?.addEventListener('click', showReferralPanel);
   $('#shareReferralBtn')?.addEventListener('click', shareReferralCode);
   $('#savedAddressesList')?.addEventListener('click', event => {

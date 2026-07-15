@@ -638,13 +638,14 @@ function showApp() {
 }
 async function loadCloudData() {
   setSaveStatus('Loading cloud…','saving');
-  const [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes, serviceAreasRes] = await Promise.all([
+  const [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes, serviceAreasRes, mobileAppSettingsRes] = await Promise.all([
     sb.from('settings').select('*').eq('id',1).single(),
     sb.from('customers').select('*').order('name'),
     sb.from('orders').select('*,customers(name,phone)').order('created_at',{ascending:false}),
     sb.from('inventory').select('*').order('name'),
     sb.from('customer_order_requests').select('*').order('created_at',{ascending:false}),
-    sb.from('service_areas').select('*').order('radius_m')
+    sb.from('service_areas').select('*').order('radius_m'),
+    sb.from('mobile_app_settings').select('allow_outside').eq('id',1).maybeSingle()
   ]);
   for (const r of [settingsRes, customersRes, ordersRes, inventoryRes, requestsRes, serviceAreasRes]) if (r.error) throw r.error;
   state.settings = { ...defaultSettings, ...settingsRes.data };
@@ -653,6 +654,7 @@ async function loadCloudData() {
   state.inventory = inventoryRes.data || [];
   state.requests = requestsRes.data || [];
   state.serviceAreas = serviceAreasRes.data || [];
+  state.mobileAppSettings = mobileAppSettingsRes.data || { allow_outside: true };
   const walkin = state.customers.find(c => c.name === 'Walk-in Customer');
   if (walkin) state.draft.customerId = walkin.id;
   setSaveStatus('Saved in cloud');
@@ -1009,7 +1011,16 @@ function renderSettings(){const s=state.settings;[
   $('#sameDayCutoffTime').value=(s.same_day_cutoff_time||'15:00').slice(0,5);
   const mask=Number(s.booking_days_mask??127);
   $$('[data-day-bit]').forEach(el=>{el.checked=(mask&(1<<Number(el.dataset.dayBit)))!==0;});
+  if($('#allowOutsideBookings')) $('#allowOutsideBookings').checked = state.mobileAppSettings?.allow_outside ?? true;
   renderServiceAreas();
+}
+async function saveAllowOutsideBookings(){
+  if(!isAdmin())return toast('Only Admin can edit this setting.');
+  const allow=$('#allowOutsideBookings').checked;
+  const{error}=await sb.from('mobile_app_settings').update({allow_outside:allow}).eq('id',1);
+  if(error){toast(error.message);$('#allowOutsideBookings').checked=!allow;return;}
+  state.mobileAppSettings={...state.mobileAppSettings,allow_outside:allow};
+  toast(allow?'Outside-Cubao bookings enabled':'Outside-Cubao bookings disabled');
 }
 function renderServiceAreas(){
   const box=$('#serviceAreasBody'); if(!box) return;
@@ -1093,6 +1104,7 @@ function bindEvents(){
   $('#inventoryForm').addEventListener('submit',saveInventory);$('#clearInventoryBtn').addEventListener('click',clearInventoryForm);$('#inventoryCategory').addEventListener('change',()=>updateInventoryPriceField(true));
   $('#inventoryBody').addEventListener('click',async e=>{const edit=e.target.dataset.editInventory,toggle=e.target.dataset.toggleInventory;if(edit){const i=state.inventory.find(x=>x.id===edit);$('#inventoryId').value=i.id;$('#inventoryName').value=i.name;$('#inventoryCategory').value=i.category;$('#inventoryStock').value=i.stock;$('#inventoryReorder').value=i.reorder_level;$('#inventoryCost').value=i.unit_cost;$('#inventoryCustomerPrice').value=Number(i.customer_price_per_load)||0;$('#inventoryConsumption').value=Number(i.consumption_per_load??1);$('#inventoryFormTitle').textContent='Edit item';updateInventoryPriceField(false);}if(toggle){if(!isAdmin())return toast('Only Admin can activate or inactivate inventory items.');const i=state.inventory.find(x=>x.id===toggle),next=i.is_active===false;const{error}=await sb.from('inventory').update({is_active:next,updated_by:state.profile.id}).eq('id',toggle);if(error)toast(error.message);else{await logAction(next?'inventory_activated':'inventory_inactivated','inventory',toggle,{});toast(next?'Item activated':'Item marked inactive');await loadCloudData();renderAll();}}});
   $('#settingsForm').addEventListener('input',autosaveSettings);
+  $('#allowOutsideBookings').addEventListener('change',saveAllowOutsideBookings);
   $('#previewBroadcastBtn').addEventListener('click',previewBroadcastRecipients);
   $('#sendBroadcastBtn').addEventListener('click',sendBroadcast);
   $('#serviceAreaForm').addEventListener('submit',saveServiceArea);

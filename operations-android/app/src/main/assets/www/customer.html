@@ -195,8 +195,10 @@
             <img src="assets/gcash.jpg" alt="Bubbly-fi GCash payment QR code" class="gcash-image">
             <div class="payment-fields">
               <div class="payment-total"><span>Amount to pay</span><strong id="paymentTotal">₱0</strong></div>
-              <label>Coupon or referral code <em>(optional)</em><input id="couponCode" placeholder="e.g. BUBBLYNEW"></label>
-              <p id="couponStatus" class="coupon-status"></p>
+              <div id="couponPanel" class="hidden">
+                <label>Coupon or referral code <em>(optional)</em><input id="couponCode" placeholder="e.g. BUBBLYNEW"></label>
+              </div>
+              <p id="couponSignInNote" class="coupon-status small">Sign in above to use a coupon or referral code — it's applied automatically once your booking is submitted.</p>
               <label>GCash reference number <input id="paymentReference" required inputmode="numeric" placeholder="Enter the reference number"></label>
               <label class="upload-card compact">
                 <span>Payment screenshot</span><small>Choose your saved GCash screenshot from Photos or Files</small>
@@ -246,7 +248,10 @@
       <div class="success-total">Submitted total: <strong id="successTotal"></strong></div>
       <p id="smsConfirmationStatus" class="sms-confirmation-status">Sending booking notifications…</p>
       <div id="notifSettings" class="notif-settings hidden">
-        <strong>🔔 Order update notifications</strong>
+        <strong>🔔 Notification settings</strong>
+        <label class="switch-line"><input id="notifOrderUpdates" type="checkbox"><span>Order updates</span></label>
+        <label class="switch-line"><input id="notifRiderUpdates" type="checkbox"><span>Rider updates</span></label>
+        <label class="switch-line"><input id="notifMarketing" type="checkbox"><span>Promos &amp; marketing</span></label>
         <label class="switch-line"><input id="notifSound" type="checkbox"><span>Sound</span></label>
         <label class="switch-line"><input id="notifVibrate" type="checkbox"><span>Vibration</span></label>
       </div>

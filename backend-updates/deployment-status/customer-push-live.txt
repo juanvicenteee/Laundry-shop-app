@@ -2,9 +2,10 @@ customer_push_backend
 validate=success
 setup_cli=success
 credentials=success
-migrations=failure
+migration_v11=failure
+migration_v11b=skipped
 automatic_sender=skipped
 marketing_sender=skipped
 staff_sender=skipped
-source_sha=dbbcd1ec363ab7a01fc30adad59ccbaa7aa2064d
-recorded_at_utc=2026-07-18T14:39:05Z
+source_sha=82b6b09f35be32bfd90cafe53217746db710eac6
+recorded_at_utc=2026-07-18T14:41:29Z

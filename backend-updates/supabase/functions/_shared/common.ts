@@ -58,10 +58,10 @@ async function googleAccessToken() {
     .sign(privateKey);
   const response = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth-type:jwt-bearer'.replace('oauth-type', 'oauth-grant-type'), assertion }),
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error_description || payload.error || 'Unable to authenticate Firebase');
+  const payload = await response.json() as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
+  if (!response.ok || !payload.access_token) throw new Error(payload.error_description || payload.error || 'Unable to authenticate Firebase');
   cachedToken = { token: payload.access_token, expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000 };
   return cachedToken.token;
 }

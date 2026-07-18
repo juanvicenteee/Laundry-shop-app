@@ -78,7 +78,7 @@ jobs:
           if [ -z "${SUPABASE_DB_URL:-}" ]; then echo '::error::Missing repository secret SUPABASE_DB_URL'; exit 1; fi
 
       - id: pooler
-        name: Build IPv4 Supavisor session connection
+        name: Discover authenticated IPv4 Supavisor session pooler
         if: steps.credentials.outcome == 'success'
         continue-on-error: true
         shell: bash
@@ -86,7 +86,7 @@ jobs:
           set -euo pipefail
           supabase projects list --output json > /tmp/supabase-projects.json
           python3 - <<'PY'
-          import json, os
+          import json, os, subprocess
           from urllib.parse import quote, unquote, urlsplit
 
           project_ref = os.environ['PROJECT_REF']
@@ -104,13 +104,41 @@ jobs:
               raise SystemExit('Database password is missing from SUPABASE_DB_URL')
           username = quote(f'postgres.{project_ref}', safe='')
           password = quote(unquote(direct.password), safe='')
-          pooler = f'postgresql://{username}:{password}@aws-0-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
+
+          selected = None
+          selected_cluster = None
+          failures = []
+          for cluster in range(10):
+              host = f'aws-{cluster}-{region}.pooler.supabase.com'
+              candidate = f'postgresql://{username}:{password}@{host}:5432/postgres?sslmode=require'
+              print(f'::add-mask::{candidate}')
+              try:
+                  probe = subprocess.run(
+                      ['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'],
+                      capture_output=True, text=True, timeout=20
+                  )
+              except subprocess.TimeoutExpired:
+                  failures.append(f'{host}: timeout')
+                  continue
+              if probe.returncode == 0 and probe.stdout.strip() == '1':
+                  selected = candidate
+                  selected_cluster = cluster
+                  break
+              error_line = (probe.stderr or probe.stdout).strip().splitlines()
+              failures.append(f'{host}: {error_line[-1] if error_line else "connection failed"}')
+
+          if not selected:
+              print('No authenticated Supavisor session endpoint was found:')
+              for failure in failures:
+                  print(f'- {failure}')
+              raise SystemExit(1)
+
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
-              env_file.write(f'POOLER_DB_URL={pooler}\n')
+              env_file.write(f'POOLER_DB_URL={selected}\n')
           with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output_file:
               output_file.write(f'region={region}\n')
-          print(f'Using IPv4 Supavisor session pooler in region {region}.')
-          print(f'::add-mask::{pooler}')
+              output_file.write(f'cluster=aws-{selected_cluster}\n')
+          print(f'Using authenticated IPv4 Supavisor session pooler aws-{selected_cluster} in region {region}.')
           PY
 
       - id: migration_v11
@@ -162,6 +190,7 @@ jobs:
           CREDENTIALS_RESULT: ${{ steps.credentials.outcome }}
           POOLER_RESULT: ${{ steps.pooler.outcome }}
           POOLER_REGION: ${{ steps.pooler.outputs.region }}
+          POOLER_CLUSTER: ${{ steps.pooler.outputs.cluster }}
           MIGRATION_V11_RESULT: ${{ steps.migration_v11.outcome }}
           MIGRATION_V11B_RESULT: ${{ steps.migration_v11b.outcome }}
           AUTOMATIC_RESULT: ${{ steps.automatic_sender.outcome }}
@@ -178,6 +207,7 @@ jobs:
             echo "credentials=$CREDENTIALS_RESULT"
             echo "pooler=$POOLER_RESULT"
             echo "pooler_region=${POOLER_REGION:-unknown}"
+            echo "pooler_cluster=${POOLER_CLUSTER:-unknown}"
             echo "migration_v11=$MIGRATION_V11_RESULT"
             echo "migration_v11b=$MIGRATION_V11B_RESULT"
             echo "automatic_sender=$AUTOMATIC_RESULT"

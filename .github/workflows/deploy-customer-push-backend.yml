@@ -28,7 +28,15 @@ jobs:
       - name: Check automatic status sender
         run: deno check backend-updates/supabase/functions/send-push-notification/index.ts
       - name: Check POS marketing sender
-        run: deno check backend-updates/supabase/functions/send-marketing-push/index.ts
+        shell: bash
+        run: |
+          set +e
+          deno check backend-updates/supabase/functions/send-marketing-push/index.ts > /tmp/marketing-check.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            grep -E 'error:|TS[0-9]+|send-marketing-push/index.ts|_shared/common.ts|^[[:space:]]*[0-9]+ \|' /tmp/marketing-check.log | tail -80 || cat /tmp/marketing-check.log
+            exit "$code"
+          fi
       - name: Check staff status sender
         run: deno check backend-updates/supabase/functions/push-order-status/index.ts
       - name: Check migration files

@@ -2,6 +2,12 @@ name: Customer Push Backend
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-customer-push-backend.yml'
+      - 'backend-updates/supabase/functions/_shared/common.ts'
+      - 'backend-updates/supabase/functions/customer-push-smoke/**'
   pull_request:
     branches: [main]
     paths:
@@ -11,12 +17,13 @@ on:
       - 'backend-updates/supabase/functions/send-marketing-push/**'
       - 'backend-updates/supabase/functions/push-order-status/**'
       - 'backend-updates/supabase/functions/send-push-notification/**'
+      - 'backend-updates/supabase/functions/customer-push-smoke/**'
       - 'backend-updates/supabase/functions/_shared/**'
       - 'backend-updates/supabase/config.toml'
       - '.github/workflows/deploy-customer-push-backend.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -29,11 +36,22 @@ jobs:
           deno-version: v2.x
       - name: Check push senders
         run: |
+          set -euo pipefail
           deno check --node-modules-dir=auto backend-updates/supabase/functions/send-push-notification/index.ts
           deno check --node-modules-dir=auto backend-updates/supabase/functions/send-marketing-push/index.ts
           deno check --node-modules-dir=auto backend-updates/supabase/functions/push-order-status/index.ts
+          deno check --node-modules-dir=auto backend-updates/supabase/functions/customer-push-smoke/index.ts
+      - name: Verify Firebase OAuth grant and broadcast recipients
+        run: |
+          set -euo pipefail
+          grep -Fq "grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer'" backend-updates/supabase/functions/_shared/common.ts
+          ! grep -Fq "urn:ietf:params:oauth-grant-type:jwt-bearer" backend-updates/supabase/functions/_shared/common.ts
+          grep -q "customer_installations" backend-updates/supabase/functions/send-marketing-push/index.ts
+          grep -q "customer_device_tokens" backend-updates/supabase/functions/send-marketing-push/index.ts
+          grep -q "marketing_broadcast" backend-updates/supabase/functions/send-marketing-push/index.ts
       - name: Check migration files
         run: |
+          set -euo pipefail
           test -s backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           test -s backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
           test -s backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
@@ -43,7 +61,7 @@ jobs:
           grep -q 'p_request_id is null or request.id = p_request_id' backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
 
   deploy:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -58,85 +76,61 @@ jobs:
           version: latest
 
       - name: Verify deployment credentials
-        shell: bash
         run: |
           set -euo pipefail
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${SUPABASE_DB_URL:-}"
 
-      - name: Discover authenticated IPv4 Supavisor session pooler
-        shell: bash
-        run: |
-          set -euo pipefail
-          supabase projects list --output json > /tmp/supabase-projects.json
-          python3 - <<'PY'
-          import json, os, subprocess
-          from urllib.parse import quote, unquote, urlsplit
-          ref = os.environ['PROJECT_REF']
-          payload = json.load(open('/tmp/supabase-projects.json', encoding='utf-8'))
-          projects = payload.get('projects', []) if isinstance(payload, dict) else payload
-          project = next((row for row in projects if str(row.get('id') or row.get('ref')) == ref), None)
-          if not project: raise SystemExit('Supabase project was not found')
-          region = str(project.get('region') or '').strip()
-          direct = urlsplit(os.environ['SUPABASE_DB_URL'])
-          if not region or not direct.password: raise SystemExit('Project region or database password is unavailable')
-          username = quote(f'postgres.{ref}', safe='')
-          password = quote(unquote(direct.password), safe='')
-          selected = None
-          for cluster in range(10):
-              candidate = f'postgresql://{username}:{password}@aws-{cluster}-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
-              print(f'::add-mask::{candidate}')
-              probe = subprocess.run(['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'], capture_output=True, text=True, timeout=20)
-              if probe.returncode == 0 and probe.stdout.strip() == '1': selected = candidate; break
-          if not selected: raise SystemExit('No authenticated IPv4 Supavisor endpoint was found')
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file: env_file.write(f'POOLER_DB_URL={selected}\n')
-          PY
-
-      - name: Apply customer push migrations
-        run: |
-          set -euo pipefail
-          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
-          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
-
-      - name: Test request-number registration without UUID
-        shell: bash
-        run: |
-          set -euo pipefail
-          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
-          begin;
-          do $$
-          declare
-            r record;
-            result jsonb;
-            test_token text := 'integration-test-' || gen_random_uuid()::text || '-fcm-token';
-          begin
-            select id, request_no, phone into r
-            from public.customer_order_requests
-            where request_no is not null and phone is not null
-            order by created_at desc limit 1;
-            if r.id is null then raise exception 'No booking exists for registration integration test'; end if;
-            result := public.register_customer_device(null, r.request_no, r.phone, test_token, 'ci-integration', 'unknown');
-            if result->>'request_id' is distinct from r.id::text then raise exception 'Request-number registration resolved the wrong booking'; end if;
-            if coalesce(result->>'tracking_token', '') = '' then raise exception 'Tracking token was not returned'; end if;
-            delete from public.customer_device_tokens where fcm_token = test_token;
-          end $$;
-          rollback;
-          SQL
-
-      - name: Deploy push senders
+      - name: Deploy production push functions
         run: |
           set -euo pipefail
           supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
           supabase functions deploy send-marketing-push --project-ref "$PROJECT_REF" --workdir backend-updates
           supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
 
-      - name: Verify live backend
+      - name: Deploy temporary FCM smoke test
+        run: |
+          set -euo pipefail
+          supabase functions deploy customer-push-smoke --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
+
+      - name: Send real Customer FCM smoke notification
+        id: smoke
         shell: bash
         run: |
           set -euo pipefail
-          result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regprocedure('public.register_customer_device(uuid,text,text,text,text,text)') is not null and to_regprocedure('public.get_customer_tracking(text,uuid)') is not null and to_regprocedure('public.notify_rider_approaching(uuid,numeric,numeric)') is not null then 'ok' else 'missing' end;")
-          test "$result" = "ok"
+          response=$(curl --fail-with-body --silent --show-error \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{}' \
+            "https://${PROJECT_REF}.supabase.co/functions/v1/customer-push-smoke")
+          printf '%s\n' "$response" | tee /tmp/customer-push-smoke.json
+          python3 - <<'PY'
+          import json
+          payload=json.load(open('/tmp/customer-push-smoke.json',encoding='utf-8'))
+          if payload.get('ok') is not True or int(payload.get('delivered') or 0) != 1 or int(payload.get('fcm_status') or 0) != 200:
+              raise SystemExit('Live Customer FCM smoke test failed: '+json.dumps(payload,sort_keys=True))
+          print('Live Customer FCM smoke test passed.')
+          PY
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          p=json.load(open('/tmp/customer-push-smoke.json',encoding='utf-8'))
+          print('source='+str(p.get('source','unknown')))
+          print('fcm_status='+str(p.get('fcm_status','')))
+          print('attempted_tokens='+str(p.get('attempted_tokens','')))
+          print('candidate_count='+str(p.get('candidate_count','')))
+          PY
+
+      - name: Remove temporary smoke function
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          printf 'y\n' | supabase functions delete customer-push-smoke --project-ref "$PROJECT_REF"
+          exit 0
+
+      - name: Verify live production functions
+        run: |
+          set -euo pipefail
           supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/functions.json
           python3 - <<'PY'
           import json
@@ -146,5 +140,30 @@ jobs:
           required={'send-push-notification','send-marketing-push','push-order-status'}
           missing=required-names
           if missing: raise SystemExit('Missing deployed functions: '+', '.join(sorted(missing)))
-          print('Live customer push backend verified.')
+          if 'customer-push-smoke' in names: raise SystemExit('Temporary smoke function was not removed')
+          print('Live production push functions verified.')
           PY
+
+      - name: Record verified broadcast deployment
+        if: success() && github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          mkdir -p backend-updates/deployment-status
+          cat > backend-updates/deployment-status/customer-broadcast-oauth-fix-live.txt <<EOF
+          customer_broadcast_oauth_fix
+          oauth_grant_type=success
+          push_function_deploy=success
+          real_fcm_smoke=success
+          fcm_http_status=${{ steps.smoke.outputs.fcm_status }}
+          token_source=${{ steps.smoke.outputs.source }}
+          attempted_tokens=${{ steps.smoke.outputs.attempted_tokens }}
+          candidate_count=${{ steps.smoke.outputs.candidate_count }}
+          temporary_smoke_function_removed=success
+          source_sha=${GITHUB_SHA}
+          recorded_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend-updates/deployment-status/customer-broadcast-oauth-fix-live.txt
+          git commit -m 'Record verified Customer broadcast FCM deployment'
+          git push

@@ -1,5 +1,10 @@
 customer_push_backend
 validate=success
-deploy=failure
-source_sha=586918988cff1ea7f132abf9d3552f8515b98368
-recorded_at_utc=2026-07-18T14:37:14Z
+setup_cli=success
+credentials=success
+migrations=failure
+automatic_sender=skipped
+marketing_sender=skipped
+staff_sender=skipped
+source_sha=dbbcd1ec363ab7a01fc30adad59ccbaa7aa2064d
+recorded_at_utc=2026-07-18T14:39:05Z

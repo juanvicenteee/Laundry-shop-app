@@ -2,10 +2,6 @@ name: Customer Phone History v13
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/customer-phone-history-v13.yml'
   pull_request:
     branches: [main]
     paths:
@@ -13,7 +9,7 @@ on:
       - '.github/workflows/customer-phone-history-v13.yml'
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   validate:
@@ -30,7 +26,7 @@ jobs:
           grep -q 'customer_request_attach_phone_devices' backend-updates/migrate-mobile-app-v13-phone-only-history.sql
 
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -112,22 +108,3 @@ jobs:
           set -euo pipefail
           result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regclass('public.customer_phone_devices') is not null and to_regprocedure('public.register_customer_phone_device(text,text,text,text)') is not null and to_regprocedure('public.get_customer_orders_by_phone(text)') is not null then 'ok' else 'missing' end;")
           test "$result" = "ok"
-      - name: Record verified deployment
-        if: success() && github.event_name == 'push'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat > backend-updates/customer_phone_history_v13_deployment.txt <<EOF
-          customer_phone_history_v13
-          migration=success
-          phone_only_history_test=success
-          notification_link_test=success
-          live_objects=success
-          source_sha=${GITHUB_SHA}
-          recorded_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          EOF
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add backend-updates/customer_phone_history_v13_deployment.txt
-          git commit -m 'Record verified customer phone history v13 deployment'
-          git push

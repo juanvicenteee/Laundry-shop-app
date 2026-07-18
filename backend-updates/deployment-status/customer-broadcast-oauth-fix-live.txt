@@ -1,0 +1,18 @@
+customer_broadcast_oauth_fix
+overall=failure
+credentials=success
+production_function_deploy=success
+smoke_function_deploy=success
+smoke_step=success
+smoke_ok=false
+smoke_http_code=500
+smoke_curl_exit=0
+fcm_http_status=
+token_source=unknown
+attempted_tokens=
+candidate_count=
+cleanup_step=success
+production_function_verification=success
+smoke_response={"ok":false,"error":"FIREBASE_SERVICE_ACCOUNT_JSON is invalid: Unexpected token '$', \"$(Get-Cont\"... is not valid JSON"}
+source_sha=7dc9175ded8a78cf988b4d22eb42f6391c12856f
+recorded_at_utc=2026-07-18T23:28:00Z

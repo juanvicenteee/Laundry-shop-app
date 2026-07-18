@@ -59,53 +59,94 @@ jobs:
       PROJECT_REF: amjhrejmcnthlrqddznw
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+
+      - id: setup_cli
+        name: Set up Supabase CLI
+        continue-on-error: true
+        uses: supabase/setup-cli@v1
         with:
           version: latest
-      - name: Verify deployment credentials
+
+      - id: credentials
+        name: Verify deployment credentials
+        if: steps.setup_cli.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN'; exit 1; fi
           if [ -z "${SUPABASE_DB_URL:-}" ]; then echo '::error::Missing repository secret SUPABASE_DB_URL'; exit 1; fi
-      - name: Apply guest push and history migrations
+
+      - id: migrations
+        name: Apply guest push and history migrations
+        if: steps.credentials.outcome == 'success'
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
-      - name: Deploy automatic status sender
+
+      - id: automatic_sender
+        name: Deploy automatic status sender
+        if: steps.migrations.outcome == 'success'
+        continue-on-error: true
         run: supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
-      - name: Deploy POS marketing sender
+
+      - id: marketing_sender
+        name: Deploy POS marketing sender
+        if: steps.automatic_sender.outcome == 'success'
+        continue-on-error: true
         run: supabase functions deploy send-marketing-push --project-ref "$PROJECT_REF" --workdir backend-updates
-      - name: Deploy staff status sender
+
+      - id: staff_sender
+        name: Deploy staff status sender
+        if: steps.marketing_sender.outcome == 'success'
+        continue-on-error: true
         run: supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
 
-  record-result:
-    if: always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    needs: [validate, deploy]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-      - name: Record safe deployment result
+      - name: Record safe deployment diagnostics
+        if: always()
         env:
-          VALIDATE_RESULT: ${{ needs.validate.result }}
-          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          SETUP_RESULT: ${{ steps.setup_cli.outcome }}
+          CREDENTIALS_RESULT: ${{ steps.credentials.outcome }}
+          MIGRATIONS_RESULT: ${{ steps.migrations.outcome }}
+          AUTOMATIC_RESULT: ${{ steps.automatic_sender.outcome }}
+          MARKETING_RESULT: ${{ steps.marketing_sender.outcome }}
+          STAFF_RESULT: ${{ steps.staff_sender.outcome }}
           SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p backend-updates/deployment-status
           {
             echo "customer_push_backend"
-            echo "validate=$VALIDATE_RESULT"
-            echo "deploy=$DEPLOY_RESULT"
+            echo "validate=success"
+            echo "setup_cli=$SETUP_RESULT"
+            echo "credentials=$CREDENTIALS_RESULT"
+            echo "migrations=$MIGRATIONS_RESULT"
+            echo "automatic_sender=$AUTOMATIC_RESULT"
+            echo "marketing_sender=$MARKETING_RESULT"
+            echo "staff_sender=$STAFF_RESULT"
             echo "source_sha=$SOURCE_SHA"
             echo "recorded_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           } > backend-updates/deployment-status/customer-push-live.txt
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backend-updates/deployment-status/customer-push-live.txt
-          git commit -m 'Record customer push backend deployment result' || exit 0
+          git commit -m 'Record detailed customer push deployment result' || true
           git push origin HEAD:main
+
+      - name: Fail when any deployment stage failed
+        if: always()
+        env:
+          SETUP_RESULT: ${{ steps.setup_cli.outcome }}
+          CREDENTIALS_RESULT: ${{ steps.credentials.outcome }}
+          MIGRATIONS_RESULT: ${{ steps.migrations.outcome }}
+          AUTOMATIC_RESULT: ${{ steps.automatic_sender.outcome }}
+          MARKETING_RESULT: ${{ steps.marketing_sender.outcome }}
+          STAFF_RESULT: ${{ steps.staff_sender.outcome }}
+        run: |
+          set -euo pipefail
+          for result in "$SETUP_RESULT" "$CREDENTIALS_RESULT" "$MIGRATIONS_RESULT" "$AUTOMATIC_RESULT" "$MARKETING_RESULT" "$STAFF_RESULT"; do
+            [ "$result" = "success" ] || exit 1
+          done

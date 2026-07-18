@@ -19,7 +19,11 @@ on:
       - '.github/workflows/deploy-customer-push-backend.yml'
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: customer-push-live-deploy
+  cancel-in-progress: true
 
 jobs:
   validate:
@@ -76,3 +80,32 @@ jobs:
         run: supabase functions deploy send-marketing-push --project-ref "$PROJECT_REF" --workdir backend-updates
       - name: Deploy staff status sender
         run: supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
+
+  record-result:
+    if: always() && (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
+    needs: [validate, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Record safe deployment result
+        env:
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p backend-updates/deployment-status
+          {
+            echo "customer_push_backend"
+            echo "validate=$VALIDATE_RESULT"
+            echo "deploy=$DEPLOY_RESULT"
+            echo "source_sha=$SOURCE_SHA"
+            echo "recorded_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } > backend-updates/deployment-status/customer-push-live.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend-updates/deployment-status/customer-push-live.txt
+          git commit -m 'Record customer push backend deployment result' || exit 0
+          git push origin HEAD:main

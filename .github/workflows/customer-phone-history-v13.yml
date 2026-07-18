@@ -1,0 +1,118 @@
+name: Customer Phone History v13
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend-updates/migrate-mobile-app-v13-phone-only-history.sql'
+      - '.github/workflows/customer-phone-history-v13.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate migration source
+        run: |
+          set -euo pipefail
+          test -s backend-updates/migrate-mobile-app-v13-phone-only-history.sql
+          grep -q 'register_customer_phone_device' backend-updates/migrate-mobile-app-v13-phone-only-history.sql
+          grep -q 'get_customer_orders_by_phone' backend-updates/migrate-mobile-app-v13-phone-only-history.sql
+          grep -q 'customer_request_attach_phone_devices' backend-updates/migrate-mobile-app-v13-phone-only-history.sql
+
+  deploy:
+    if: github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      PROJECT_REF: amjhrejmcnthlrqddznw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Verify deployment credentials
+        run: |
+          set -euo pipefail
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_DB_URL:-}"
+      - name: Discover authenticated IPv4 Supavisor session pooler
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase projects list --output json > /tmp/supabase-projects.json
+          python3 - <<'PY'
+          import json, os, subprocess
+          from urllib.parse import quote, unquote, urlsplit
+          ref=os.environ['PROJECT_REF']
+          payload=json.load(open('/tmp/supabase-projects.json',encoding='utf-8'))
+          projects=payload.get('projects',[]) if isinstance(payload,dict) else payload
+          project=next((row for row in projects if str(row.get('id') or row.get('ref'))==ref),None)
+          if not project: raise SystemExit('Supabase project was not found')
+          region=str(project.get('region') or '').strip()
+          direct=urlsplit(os.environ['SUPABASE_DB_URL'])
+          if not region or not direct.password: raise SystemExit('Project region or database password is unavailable')
+          username=quote(f'postgres.{ref}',safe='')
+          password=quote(unquote(direct.password),safe='')
+          selected=None
+          for cluster in range(10):
+              candidate=f'postgresql://{username}:{password}@aws-{cluster}-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
+              print(f'::add-mask::{candidate}')
+              probe=subprocess.run(['psql',candidate,'-v','ON_ERROR_STOP=1','-Atqc','select 1'],capture_output=True,text=True,timeout=20)
+              if probe.returncode==0 and probe.stdout.strip()=='1': selected=candidate; break
+          if not selected: raise SystemExit('No authenticated IPv4 Supavisor endpoint was found')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f: f.write(f'POOLER_DB_URL={selected}\n')
+          PY
+      - name: Apply phone history migration
+        run: psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v13-phone-only-history.sql
+      - name: Test phone-only history and notification registration
+        shell: bash
+        run: |
+          set -euo pipefail
+          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          begin;
+          do $$
+          declare
+            r record;
+            registration jsonb;
+            history jsonb;
+            test_token text := 'phone-history-ci-' || gen_random_uuid()::text || '-firebase-token';
+          begin
+            select phone into r
+            from public.customer_order_requests
+            where public.bubblyfi_phone_key(phone) is not null
+            order by created_at desc
+            limit 1;
+            if r.phone is null then raise exception 'No booking exists for the phone history integration test'; end if;
+            registration := public.register_customer_phone_device(r.phone, test_token, 'ci-v13', 'unknown');
+            if coalesce((registration->>'linked_order_count')::integer, 0) < 1 then
+              raise exception 'Phone device was not linked to existing orders';
+            end if;
+            history := public.get_customer_orders_by_phone(r.phone);
+            if coalesce((history->>'count')::integer, 0) < 1 then
+              raise exception 'Phone history returned no orders';
+            end if;
+            if not exists(select 1 from public.customer_phone_devices where fcm_token=test_token and enabled) then
+              raise exception 'Phone device registration row was not created';
+            end if;
+            if not exists(select 1 from public.customer_device_tokens where fcm_token=test_token and enabled) then
+              raise exception 'Order notification tokens were not linked';
+            end if;
+            delete from public.customer_device_tokens where fcm_token=test_token;
+            delete from public.customer_phone_devices where fcm_token=test_token;
+          end $$;
+          rollback;
+          SQL
+      - name: Verify live objects
+        run: |
+          set -euo pipefail
+          result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regclass('public.customer_phone_devices') is not null and to_regprocedure('public.register_customer_phone_device(text,text,text,text)') is not null and to_regprocedure('public.get_customer_orders_by_phone(text)') is not null then 'ok' else 'missing' end;")
+          test "$result" = "ok"

@@ -40,18 +40,50 @@ export async function requireStaff(req: Request, adminOnly = false) {
   return { user, role };
 }
 
+type FirebaseConfig = { clientEmail: string; privateKey: string; projectId: string };
+let cachedFirebaseConfig: FirebaseConfig | null = null;
+
+function firebaseConfig(): FirebaseConfig {
+  if (cachedFirebaseConfig) return cachedFirebaseConfig;
+
+  let clientEmail = Deno.env.get('FIREBASE_CLIENT_EMAIL') || '';
+  let privateKey = Deno.env.get('FIREBASE_PRIVATE_KEY') || '';
+  let projectId = Deno.env.get('FIREBASE_PROJECT_ID') || '';
+  const serviceAccountJson = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON');
+
+  if (serviceAccountJson) {
+    try {
+      const serviceAccount = JSON.parse(serviceAccountJson) as {
+        client_email?: string;
+        private_key?: string;
+        project_id?: string;
+      };
+      clientEmail ||= serviceAccount.client_email || '';
+      privateKey ||= serviceAccount.private_key || '';
+      projectId ||= serviceAccount.project_id || '';
+    } catch (error) {
+      throw new Error(`FIREBASE_SERVICE_ACCOUNT_JSON is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  if (!clientEmail || !privateKey || !projectId) {
+    throw new Error('Firebase service-account secrets are not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and FIREBASE_PROJECT_ID.');
+  }
+
+  cachedFirebaseConfig = { clientEmail, privateKey, projectId };
+  return cachedFirebaseConfig;
+}
+
 let cachedToken: { token: string; expiresAt: number } | null = null;
 async function googleAccessToken() {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token;
-  const clientEmail = Deno.env.get('FIREBASE_CLIENT_EMAIL');
-  const rawKey = Deno.env.get('FIREBASE_PRIVATE_KEY');
-  if (!clientEmail || !rawKey) throw new Error('Firebase service-account secrets are not configured');
-  const privateKey = await importPKCS8(rawKey.replace(/\\n/g, '\n'), 'RS256');
+  const config = firebaseConfig();
+  const privateKey = await importPKCS8(config.privateKey.replace(/\\n/g, '\n'), 'RS256');
   const now = Math.floor(Date.now() / 1000);
   const assertion = await new SignJWT({ scope: 'https://www.googleapis.com/auth/firebase.messaging' })
     .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
-    .setIssuer(clientEmail)
-    .setSubject(clientEmail)
+    .setIssuer(config.clientEmail)
+    .setSubject(config.clientEmail)
     .setAudience('https://oauth2.googleapis.com/token')
     .setIssuedAt(now)
     .setExpirationTime(now + 3600)
@@ -72,11 +104,10 @@ export type PushMessage = {
 };
 
 export async function sendFcm(message: PushMessage) {
-  const projectId = Deno.env.get('FIREBASE_PROJECT_ID');
-  if (!projectId) throw new Error('FIREBASE_PROJECT_ID is not configured');
+  const config = firebaseConfig();
   const accessToken = await googleAccessToken();
   const channelId = message.channel === 'rider' ? 'rider_updates' : message.channel === 'promo' ? 'marketing_promos' : message.channel === 'reminder' ? 'booking_reminders' : 'order_updates';
-  const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
+  const response = await fetch(`https://fcm.googleapis.com/v1/projects/${config.projectId}/messages:send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: {

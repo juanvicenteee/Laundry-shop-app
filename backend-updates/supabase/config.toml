@@ -1,0 +1,10 @@
+project_id = "amjhrejmcnthlrqddznw"
+
+[functions.send-push-notification]
+verify_jwt = false
+
+[functions.send-marketing-push]
+verify_jwt = true
+
+[functions.push-order-status]
+verify_jwt = true

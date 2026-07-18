@@ -2,6 +2,10 @@ name: Customer Phone History v13
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/customer-phone-history-v13.yml'
   pull_request:
     branches: [main]
     paths:
@@ -26,7 +30,7 @@ jobs:
           grep -q 'customer_request_attach_phone_devices' backend-updates/migrate-mobile-app-v13-phone-only-history.sql
 
   deploy:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -93,19 +97,11 @@ jobs:
             limit 1;
             if r.phone is null then raise exception 'No booking exists for the phone history integration test'; end if;
             registration := public.register_customer_phone_device(r.phone, test_token, 'ci-v13', 'unknown');
-            if coalesce((registration->>'linked_order_count')::integer, 0) < 1 then
-              raise exception 'Phone device was not linked to existing orders';
-            end if;
+            if coalesce((registration->>'linked_order_count')::integer, 0) < 1 then raise exception 'Phone device was not linked to existing orders'; end if;
             history := public.get_customer_orders_by_phone(r.phone);
-            if coalesce((history->>'count')::integer, 0) < 1 then
-              raise exception 'Phone history returned no orders';
-            end if;
-            if not exists(select 1 from public.customer_phone_devices where fcm_token=test_token and enabled) then
-              raise exception 'Phone device registration row was not created';
-            end if;
-            if not exists(select 1 from public.customer_device_tokens where fcm_token=test_token and enabled) then
-              raise exception 'Order notification tokens were not linked';
-            end if;
+            if coalesce((history->>'count')::integer, 0) < 1 then raise exception 'Phone history returned no orders'; end if;
+            if not exists(select 1 from public.customer_phone_devices where fcm_token=test_token and enabled) then raise exception 'Phone device registration row was not created'; end if;
+            if not exists(select 1 from public.customer_device_tokens where fcm_token=test_token and enabled) then raise exception 'Order notification tokens were not linked'; end if;
             delete from public.customer_device_tokens where fcm_token=test_token;
             delete from public.customer_phone_devices where fcm_token=test_token;
           end $$;

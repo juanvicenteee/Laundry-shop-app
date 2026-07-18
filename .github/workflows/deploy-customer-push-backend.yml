@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'backend-updates/migrate-mobile-app-v11-guest-push-history.sql'
+      - 'backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql'
       - 'backend-updates/supabase/functions/send-marketing-push/**'
       - 'backend-updates/supabase/functions/push-order-status/**'
       - 'backend-updates/supabase/functions/send-push-notification/**'
@@ -43,12 +44,14 @@ jobs:
             exit 1
           fi
 
-      - name: Apply guest push and history migration
+      - name: Apply guest push and history migrations
         shell: bash
         run: |
           set -euo pipefail
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
             -f backend-updates/migrate-mobile-app-v11-guest-push-history.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
+            -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
 
       - name: Deploy automatic status sender
         run: supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates

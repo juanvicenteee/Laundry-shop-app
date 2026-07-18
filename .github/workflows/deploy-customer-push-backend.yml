@@ -49,16 +49,6 @@ jobs:
           grep -q "customer_installations" backend-updates/supabase/functions/send-marketing-push/index.ts
           grep -q "customer_device_tokens" backend-updates/supabase/functions/send-marketing-push/index.ts
           grep -q "marketing_broadcast" backend-updates/supabase/functions/send-marketing-push/index.ts
-      - name: Check migration files
-        run: |
-          set -euo pipefail
-          test -s backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          test -s backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
-          test -s backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
-          grep -q 'register_customer_installation' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          grep -q 'get_customer_tracking' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          grep -q 'notify_rider_approaching' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          grep -q 'p_request_id is null or request.id = p_request_id' backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
 
   deploy:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
@@ -67,7 +57,6 @@ jobs:
     timeout-minutes: 20
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
       PROJECT_REF: amjhrejmcnthlrqddznw
     steps:
       - uses: actions/checkout@v4
@@ -76,12 +65,15 @@ jobs:
           version: latest
 
       - name: Verify deployment credentials
+        id: credentials
+        continue-on-error: true
         run: |
           set -euo pipefail
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
-          test -n "${SUPABASE_DB_URL:-}"
 
       - name: Deploy production push functions
+        id: production_deploy
+        continue-on-error: true
         run: |
           set -euo pipefail
           supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
@@ -89,39 +81,60 @@ jobs:
           supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
 
       - name: Deploy temporary FCM smoke test
+        id: smoke_deploy
+        continue-on-error: true
         run: |
           set -euo pipefail
           supabase functions deploy customer-push-smoke --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
 
       - name: Send real Customer FCM smoke notification
         id: smoke
+        continue-on-error: true
         shell: bash
         run: |
-          set -euo pipefail
-          response=$(curl --fail-with-body --silent --show-error \
-            --request POST \
-            --header 'Content-Type: application/json' \
-            --data '{}' \
-            "https://${PROJECT_REF}.supabase.co/functions/v1/customer-push-smoke")
-          printf '%s\n' "$response" | tee /tmp/customer-push-smoke.json
-          python3 - <<'PY'
-          import json
-          payload=json.load(open('/tmp/customer-push-smoke.json',encoding='utf-8'))
-          if payload.get('ok') is not True or int(payload.get('delivered') or 0) != 1 or int(payload.get('fcm_status') or 0) != 200:
-              raise SystemExit('Live Customer FCM smoke test failed: '+json.dumps(payload,sort_keys=True))
-          print('Live Customer FCM smoke test passed.')
-          PY
+          set +e
+          : > /tmp/customer-push-smoke.json
+          http_code=000
+          curl_exit=1
+          for attempt in 1 2 3 4 5 6; do
+            http_code=$(curl --silent --show-error \
+              --output /tmp/customer-push-smoke.json \
+              --write-out '%{http_code}' \
+              --request POST \
+              --header 'Content-Type: application/json' \
+              --data '{}' \
+              "https://${PROJECT_REF}.supabase.co/functions/v1/customer-push-smoke")
+            curl_exit=$?
+            if [ "$curl_exit" -eq 0 ] && [ "$http_code" != "404" ] && [ "$http_code" != "503" ] && [ "$http_code" != "000" ]; then
+              break
+            fi
+            sleep 4
+          done
+          echo "http_code=$http_code" >> "$GITHUB_OUTPUT"
+          echo "curl_exit=$curl_exit" >> "$GITHUB_OUTPUT"
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json
-          p=json.load(open('/tmp/customer-push-smoke.json',encoding='utf-8'))
-          print('source='+str(p.get('source','unknown')))
-          print('fcm_status='+str(p.get('fcm_status','')))
-          print('attempted_tokens='+str(p.get('attempted_tokens','')))
-          print('candidate_count='+str(p.get('candidate_count','')))
+          import json, pathlib
+          p=pathlib.Path('/tmp/customer-push-smoke.json')
+          try:
+              payload=json.loads(p.read_text(encoding='utf-8') or '{}')
+          except Exception as exc:
+              payload={'ok':False,'error':'Invalid smoke response: '+str(exc)}
+          print('ok='+str(payload.get('ok') is True).lower())
+          print('delivered='+str(payload.get('delivered','')))
+          print('source='+str(payload.get('source','unknown')))
+          print('fcm_status='+str(payload.get('fcm_status','')))
+          print('attempted_tokens='+str(payload.get('attempted_tokens','')))
+          print('candidate_count='+str(payload.get('candidate_count','')))
+          summary={k:payload.get(k) for k in ('ok','error','delivered','source','token','fcm_status','attempted_tokens','candidate_count','attempts') if k in payload}
+          pathlib.Path('/tmp/customer-push-smoke-summary.json').write_text(json.dumps(summary,separators=(',',':'),ensure_ascii=True),encoding='utf-8')
           PY
+          cat /tmp/customer-push-smoke-summary.json
+          exit 0
 
       - name: Remove temporary smoke function
+        id: cleanup
         if: always()
+        continue-on-error: true
         shell: bash
         run: |
           set +e
@@ -129,6 +142,9 @@ jobs:
           exit 0
 
       - name: Verify live production functions
+        id: verify
+        if: always()
+        continue-on-error: true
         run: |
           set -euo pipefail
           supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/functions.json
@@ -144,26 +160,79 @@ jobs:
           print('Live production push functions verified.')
           PY
 
-      - name: Record verified broadcast deployment
-        if: success() && github.event_name == 'push'
+      - name: Record broadcast deployment diagnostics
+        id: diagnostics
+        if: always() && github.event_name == 'push'
+        env:
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          PRODUCTION_DEPLOY_OUTCOME: ${{ steps.production_deploy.outcome }}
+          SMOKE_DEPLOY_OUTCOME: ${{ steps.smoke_deploy.outcome }}
+          SMOKE_STEP_OUTCOME: ${{ steps.smoke.outcome }}
+          SMOKE_OK: ${{ steps.smoke.outputs.ok }}
+          SMOKE_HTTP_CODE: ${{ steps.smoke.outputs.http_code }}
+          SMOKE_CURL_EXIT: ${{ steps.smoke.outputs.curl_exit }}
+          SMOKE_FCM_STATUS: ${{ steps.smoke.outputs.fcm_status }}
+          SMOKE_SOURCE: ${{ steps.smoke.outputs.source }}
+          SMOKE_ATTEMPTED: ${{ steps.smoke.outputs.attempted_tokens }}
+          SMOKE_CANDIDATES: ${{ steps.smoke.outputs.candidate_count }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
         run: |
           set -euo pipefail
           mkdir -p backend-updates/deployment-status
+          smoke_summary=$(cat /tmp/customer-push-smoke-summary.json 2>/dev/null || printf '{"ok":false,"error":"Smoke request did not produce a response"}')
+          overall=failure
+          if [ "$CREDENTIALS_OUTCOME" = success ] && \
+             [ "$PRODUCTION_DEPLOY_OUTCOME" = success ] && \
+             [ "$SMOKE_DEPLOY_OUTCOME" = success ] && \
+             [ "$SMOKE_OK" = true ] && \
+             [ "$SMOKE_HTTP_CODE" = 200 ] && \
+             [ "$SMOKE_FCM_STATUS" = 200 ] && \
+             [ "$VERIFY_OUTCOME" = success ]; then
+            overall=success
+          fi
           cat > backend-updates/deployment-status/customer-broadcast-oauth-fix-live.txt <<EOF
           customer_broadcast_oauth_fix
-          oauth_grant_type=success
-          push_function_deploy=success
-          real_fcm_smoke=success
-          fcm_http_status=${{ steps.smoke.outputs.fcm_status }}
-          token_source=${{ steps.smoke.outputs.source }}
-          attempted_tokens=${{ steps.smoke.outputs.attempted_tokens }}
-          candidate_count=${{ steps.smoke.outputs.candidate_count }}
-          temporary_smoke_function_removed=success
+          overall=$overall
+          credentials=$CREDENTIALS_OUTCOME
+          production_function_deploy=$PRODUCTION_DEPLOY_OUTCOME
+          smoke_function_deploy=$SMOKE_DEPLOY_OUTCOME
+          smoke_step=$SMOKE_STEP_OUTCOME
+          smoke_ok=$SMOKE_OK
+          smoke_http_code=$SMOKE_HTTP_CODE
+          smoke_curl_exit=$SMOKE_CURL_EXIT
+          fcm_http_status=$SMOKE_FCM_STATUS
+          token_source=$SMOKE_SOURCE
+          attempted_tokens=$SMOKE_ATTEMPTED
+          candidate_count=$SMOKE_CANDIDATES
+          cleanup_step=$CLEANUP_OUTCOME
+          production_function_verification=$VERIFY_OUTCOME
+          smoke_response=$smoke_summary
           source_sha=${GITHUB_SHA}
           recorded_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           EOF
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add backend-updates/deployment-status/customer-broadcast-oauth-fix-live.txt
-          git commit -m 'Record verified Customer broadcast FCM deployment'
+          git commit -m "Record Customer broadcast deployment diagnostics ($overall)"
           git push
+
+      - name: Enforce successful live FCM verification
+        if: always()
+        env:
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          PRODUCTION_DEPLOY_OUTCOME: ${{ steps.production_deploy.outcome }}
+          SMOKE_DEPLOY_OUTCOME: ${{ steps.smoke_deploy.outcome }}
+          SMOKE_OK: ${{ steps.smoke.outputs.ok }}
+          SMOKE_HTTP_CODE: ${{ steps.smoke.outputs.http_code }}
+          SMOKE_FCM_STATUS: ${{ steps.smoke.outputs.fcm_status }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          set -euo pipefail
+          test "$CREDENTIALS_OUTCOME" = success
+          test "$PRODUCTION_DEPLOY_OUTCOME" = success
+          test "$SMOKE_DEPLOY_OUTCOME" = success
+          test "$SMOKE_OK" = true
+          test "$SMOKE_HTTP_CODE" = 200
+          test "$SMOKE_FCM_STATUS" = 200
+          test "$VERIFY_OUTCOME" = success

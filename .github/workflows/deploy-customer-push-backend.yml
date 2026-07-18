@@ -10,6 +10,7 @@ on:
       - 'backend-updates/supabase/functions/send-marketing-push/**'
       - 'backend-updates/supabase/functions/push-order-status/**'
       - 'backend-updates/supabase/functions/send-push-notification/**'
+      - 'backend-updates/supabase/functions/_shared/**'
       - 'backend-updates/supabase/config.toml'
       - '.github/workflows/deploy-customer-push-backend.yml'
 
@@ -26,19 +27,26 @@ jobs:
         with:
           deno-version: v2.x
       - name: Check automatic status sender
-        run: deno check backend-updates/supabase/functions/send-push-notification/index.ts
+        shell: bash
+        run: |
+          set +e
+          deno check backend-updates/supabase/functions/send-push-notification/index.ts > /tmp/automatic.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then cat /tmp/automatic.log | tail -100; exit "$code"; fi
       - name: Check POS marketing sender
         shell: bash
         run: |
           set +e
-          deno check backend-updates/supabase/functions/send-marketing-push/index.ts > /tmp/marketing-check.log 2>&1
+          deno check backend-updates/supabase/functions/send-marketing-push/index.ts > /tmp/marketing.log 2>&1
           code=$?
-          if [ "$code" -ne 0 ]; then
-            grep -E 'error:|TS[0-9]+|send-marketing-push/index.ts|_shared/common.ts|^[[:space:]]*[0-9]+ \|' /tmp/marketing-check.log | tail -80 || cat /tmp/marketing-check.log
-            exit "$code"
-          fi
+          if [ "$code" -ne 0 ]; then cat /tmp/marketing.log | tail -100; exit "$code"; fi
       - name: Check staff status sender
-        run: deno check backend-updates/supabase/functions/push-order-status/index.ts
+        shell: bash
+        run: |
+          set +e
+          deno check backend-updates/supabase/functions/push-order-status/index.ts > /tmp/staff.log 2>&1
+          code=$?
+          if [ "$code" -ne 0 ]; then cat /tmp/staff.log | tail -100; exit "$code"; fi
       - name: Check migration files
         run: |
           test -s backend-updates/migrate-mobile-app-v11-guest-push-history.sql

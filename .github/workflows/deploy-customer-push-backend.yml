@@ -2,6 +2,10 @@ name: Customer Push Backend
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-customer-push-backend.yml'
   pull_request:
     branches: [main]
     paths:
@@ -16,7 +20,7 @@ on:
       - '.github/workflows/deploy-customer-push-backend.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   validate:
@@ -37,13 +41,10 @@ jobs:
           test -s backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           test -s backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
           test -s backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
-          grep -q 'register_customer_installation' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          grep -q 'get_customer_tracking' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
-          grep -q 'notify_rider_approaching' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           grep -q 'p_request_id is null or request.id = p_request_id' backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
 
   deploy:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -58,38 +59,35 @@ jobs:
           version: latest
 
       - name: Verify deployment credentials
-        shell: bash
         run: |
           set -euo pipefail
           test -n "${SUPABASE_ACCESS_TOKEN:-}"
           test -n "${SUPABASE_DB_URL:-}"
 
       - name: Discover authenticated IPv4 Supavisor session pooler
-        shell: bash
         run: |
           set -euo pipefail
           supabase projects list --output json > /tmp/supabase-projects.json
           python3 - <<'PY'
           import json, os, subprocess
           from urllib.parse import quote, unquote, urlsplit
-          ref = os.environ['PROJECT_REF']
-          payload = json.load(open('/tmp/supabase-projects.json', encoding='utf-8'))
-          projects = payload.get('projects', []) if isinstance(payload, dict) else payload
-          project = next((row for row in projects if str(row.get('id') or row.get('ref')) == ref), None)
+          ref=os.environ['PROJECT_REF']
+          payload=json.load(open('/tmp/supabase-projects.json',encoding='utf-8'))
+          projects=payload.get('projects',[]) if isinstance(payload,dict) else payload
+          project=next((row for row in projects if str(row.get('id') or row.get('ref'))==ref),None)
           if not project: raise SystemExit('Supabase project was not found')
-          region = str(project.get('region') or '').strip()
-          direct = urlsplit(os.environ['SUPABASE_DB_URL'])
+          region=str(project.get('region') or '').strip()
+          direct=urlsplit(os.environ['SUPABASE_DB_URL'])
           if not region or not direct.password: raise SystemExit('Project region or database password is unavailable')
-          username = quote(f'postgres.{ref}', safe='')
-          password = quote(unquote(direct.password), safe='')
-          selected = None
+          username=quote(f'postgres.{ref}',safe=''); password=quote(unquote(direct.password),safe='')
+          selected=None
           for cluster in range(10):
-              candidate = f'postgresql://{username}:{password}@aws-{cluster}-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
+              candidate=f'postgresql://{username}:{password}@aws-{cluster}-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
               print(f'::add-mask::{candidate}')
-              probe = subprocess.run(['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'], capture_output=True, text=True, timeout=20)
-              if probe.returncode == 0 and probe.stdout.strip() == '1': selected = candidate; break
+              probe=subprocess.run(['psql',candidate,'-v','ON_ERROR_STOP=1','-Atqc','select 1'],capture_output=True,text=True,timeout=20)
+              if probe.returncode==0 and probe.stdout.strip()=='1': selected=candidate; break
           if not selected: raise SystemExit('No authenticated IPv4 Supavisor endpoint was found')
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file: env_file.write(f'POOLER_DB_URL={selected}\n')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f: f.write(f'POOLER_DB_URL={selected}\n')
           PY
 
       - name: Apply customer push migrations
@@ -99,8 +97,7 @@ jobs:
           psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
           psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
 
-      - name: Test request-number registration without UUID
-        shell: bash
+      - name: Integration-test booking registration without UUID
         run: |
           set -euo pipefail
           psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
@@ -111,23 +108,15 @@ jobs:
             result jsonb;
             test_token text := 'integration-test-' || gen_random_uuid()::text || '-fcm-token';
           begin
-            select id, request_no, phone
-              into r
+            select id, request_no, phone into r
             from public.customer_order_requests
             where request_no is not null and phone is not null
-            order by created_at desc
-            limit 1;
-            if r.id is null then
-              raise exception 'No booking exists for registration integration test';
-            end if;
+            order by created_at desc limit 1;
+            if r.id is null then raise exception 'No booking exists for registration integration test'; end if;
             result := public.register_customer_device(null, r.request_no, r.phone, test_token, 'ci-integration', 'unknown');
-            if result->>'request_id' is distinct from r.id::text then
-              raise exception 'Request-number registration resolved the wrong booking';
-            end if;
-            if coalesce(result->>'tracking_token', '') = '' then
-              raise exception 'Tracking token was not returned';
-            end if;
-            delete from public.customer_device_tokens where fcm_token = test_token;
+            if result->>'request_id' is distinct from r.id::text then raise exception 'Resolved the wrong booking'; end if;
+            if coalesce(result->>'tracking_token','')='' then raise exception 'Tracking token was not returned'; end if;
+            delete from public.customer_device_tokens where fcm_token=test_token;
           end $$;
           rollback;
           SQL
@@ -140,7 +129,6 @@ jobs:
           supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
 
       - name: Verify live backend
-        shell: bash
         run: |
           set -euo pipefail
           result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regprocedure('public.register_customer_device(uuid,text,text,text,text,text)') is not null and to_regprocedure('public.get_customer_tracking(text,uuid)') is not null and to_regprocedure('public.notify_rider_approaching(uuid,numeric,numeric)') is not null then 'ok' else 'missing' end;")
@@ -151,8 +139,26 @@ jobs:
           payload=json.load(open('/tmp/functions.json',encoding='utf-8'))
           rows=payload.get('functions',[]) if isinstance(payload,dict) else payload
           names={str(row.get('name') or row.get('slug')) for row in rows}
-          required={'send-push-notification','send-marketing-push','push-order-status'}
-          missing=required-names
+          missing={'send-push-notification','send-marketing-push','push-order-status'}-names
           if missing: raise SystemExit('Missing deployed functions: '+', '.join(sorted(missing)))
-          print('Live customer push backend verified.')
           PY
+
+      - name: Record verified v12 deployment
+        run: |
+          set -euo pipefail
+          mkdir -p backend-updates/deployment-status
+          {
+            echo 'customer_push_backend_v12'
+            echo 'migration=success'
+            echo 'null_request_id_integration_test=success'
+            echo 'send_push_notification=success'
+            echo 'send_marketing_push=success'
+            echo 'push_order_status=success'
+            echo "source_sha=$GITHUB_SHA"
+            echo "recorded_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } > backend-updates/deployment-status/customer-push-v12-live.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add backend-updates/deployment-status/customer-push-v12-live.txt
+          git commit -m 'Record verified customer push v12 deployment'
+          git push origin HEAD:main

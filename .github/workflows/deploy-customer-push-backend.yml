@@ -27,27 +27,11 @@ jobs:
         with:
           deno-version: v2.x
       - name: Check automatic status sender
-        run: deno check backend-updates/supabase/functions/send-push-notification/index.ts
+        run: deno check --node-modules-dir=auto backend-updates/supabase/functions/send-push-notification/index.ts
       - name: Check POS marketing sender
-        id: marketing_check
-        shell: bash
-        run: |
-          mkdir -p diagnostics
-          set +e
-          deno check backend-updates/supabase/functions/send-marketing-push/index.ts > diagnostics/marketing-check.log 2>&1
-          code=$?
-          cat diagnostics/marketing-check.log | tail -100
-          exit "$code"
-      - name: Upload marketing diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: marketing-typecheck-diagnostic
-          path: diagnostics/marketing-check.log
-          if-no-files-found: error
-          retention-days: 2
+        run: deno check --node-modules-dir=auto backend-updates/supabase/functions/send-marketing-push/index.ts
       - name: Check staff status sender
-        run: deno check backend-updates/supabase/functions/push-order-status/index.ts
+        run: deno check --node-modules-dir=auto backend-updates/supabase/functions/push-order-status/index.ts
       - name: Check migration files
         run: |
           test -s backend-updates/migrate-mobile-app-v11-guest-push-history.sql

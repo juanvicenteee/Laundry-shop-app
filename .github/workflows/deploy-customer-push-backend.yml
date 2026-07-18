@@ -7,6 +7,7 @@ on:
     paths:
       - 'backend-updates/migrate-mobile-app-v11-guest-push-history.sql'
       - 'backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql'
+      - 'backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql'
       - 'backend-updates/supabase/functions/send-marketing-push/**'
       - 'backend-updates/supabase/functions/push-order-status/**'
       - 'backend-updates/supabase/functions/send-push-notification/**'
@@ -26,19 +27,20 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-      - name: Check automatic status sender
-        run: deno check --node-modules-dir=auto backend-updates/supabase/functions/send-push-notification/index.ts
-      - name: Check POS marketing sender
-        run: deno check --node-modules-dir=auto backend-updates/supabase/functions/send-marketing-push/index.ts
-      - name: Check staff status sender
-        run: deno check --node-modules-dir=auto backend-updates/supabase/functions/push-order-status/index.ts
+      - name: Check push senders
+        run: |
+          deno check --node-modules-dir=auto backend-updates/supabase/functions/send-push-notification/index.ts
+          deno check --node-modules-dir=auto backend-updates/supabase/functions/send-marketing-push/index.ts
+          deno check --node-modules-dir=auto backend-updates/supabase/functions/push-order-status/index.ts
       - name: Check migration files
         run: |
           test -s backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           test -s backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
+          test -s backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
           grep -q 'register_customer_installation' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           grep -q 'get_customer_tracking' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           grep -q 'notify_rider_approaching' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
+          grep -q 'p_request_id is null or request.id = p_request_id' backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
 
   deploy:
     if: github.event_name == 'workflow_dispatch'
@@ -59,8 +61,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN'; exit 1; fi
-          if [ -z "${SUPABASE_DB_URL:-}" ]; then echo '::error::Missing repository secret SUPABASE_DB_URL'; exit 1; fi
+          test -n "${SUPABASE_ACCESS_TOKEN:-}"
+          test -n "${SUPABASE_DB_URL:-}"
 
       - name: Discover authenticated IPv4 Supavisor session pooler
         shell: bash
@@ -70,69 +72,87 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess
           from urllib.parse import quote, unquote, urlsplit
-
-          project_ref = os.environ['PROJECT_REF']
+          ref = os.environ['PROJECT_REF']
           payload = json.load(open('/tmp/supabase-projects.json', encoding='utf-8'))
           projects = payload.get('projects', []) if isinstance(payload, dict) else payload
-          project = next((row for row in projects if str(row.get('id') or row.get('ref')) == project_ref), None)
-          if not project:
-              raise SystemExit('Supabase project was not found for the configured access token')
+          project = next((row for row in projects if str(row.get('id') or row.get('ref')) == ref), None)
+          if not project: raise SystemExit('Supabase project was not found')
           region = str(project.get('region') or '').strip()
           direct = urlsplit(os.environ['SUPABASE_DB_URL'])
-          if not region or not direct.password:
-              raise SystemExit('Project region or database password is unavailable')
-
-          username = quote(f'postgres.{project_ref}', safe='')
+          if not region or not direct.password: raise SystemExit('Project region or database password is unavailable')
+          username = quote(f'postgres.{ref}', safe='')
           password = quote(unquote(direct.password), safe='')
           selected = None
           for cluster in range(10):
               candidate = f'postgresql://{username}:{password}@aws-{cluster}-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
               print(f'::add-mask::{candidate}')
-              probe = subprocess.run(
-                  ['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'],
-                  capture_output=True, text=True, timeout=20
-              )
-              if probe.returncode == 0 and probe.stdout.strip() == '1':
-                  selected = candidate
-                  print(f'Using Supavisor aws-{cluster} in {region}.')
-                  break
-          if not selected:
-              raise SystemExit('No authenticated IPv4 Supavisor session endpoint was found')
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
-              env_file.write(f'POOLER_DB_URL={selected}\n')
+              probe = subprocess.run(['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'], capture_output=True, text=True, timeout=20)
+              if probe.returncode == 0 and probe.stdout.strip() == '1': selected = candidate; break
+          if not selected: raise SystemExit('No authenticated IPv4 Supavisor endpoint was found')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file: env_file.write(f'POOLER_DB_URL={selected}\n')
           PY
 
-      - name: Apply guest push and order-history migrations
-        shell: bash
+      - name: Apply customer push migrations
         run: |
           set -euo pipefail
           psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11-guest-push-history.sql
           psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
+          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v12-null-request-id-registration.sql
 
-      - name: Deploy automatic status sender
-        run: supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
-
-      - name: Deploy POS marketing sender
-        run: supabase functions deploy send-marketing-push --project-ref "$PROJECT_REF" --workdir backend-updates
-
-      - name: Deploy staff status sender
-        run: supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
-
-      - name: Verify live database objects and Edge Functions
+      - name: Test request-number registration without UUID
         shell: bash
         run: |
           set -euo pipefail
-          result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regclass('public.customer_installations') is not null and to_regclass('public.customer_device_tokens') is not null and to_regclass('public.customer_status_history') is not null and to_regprocedure('public.register_customer_installation(uuid,text,text,text)') is not null and to_regprocedure('public.register_customer_device(uuid,text,text,text,text,text)') is not null and to_regprocedure('public.get_customer_tracking(text,uuid)') is not null and to_regprocedure('public.notify_rider_approaching(uuid,numeric,numeric)') is not null then 'ok' else 'missing' end;")
+          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          begin;
+          do $$
+          declare
+            r record;
+            result jsonb;
+            test_token text := 'integration-test-' || gen_random_uuid()::text || '-fcm-token';
+          begin
+            select id, request_no, phone
+              into r
+            from public.customer_order_requests
+            where request_no is not null and phone is not null
+            order by created_at desc
+            limit 1;
+            if r.id is null then
+              raise exception 'No booking exists for registration integration test';
+            end if;
+            result := public.register_customer_device(null, r.request_no, r.phone, test_token, 'ci-integration', 'unknown');
+            if result->>'request_id' is distinct from r.id::text then
+              raise exception 'Request-number registration resolved the wrong booking';
+            end if;
+            if coalesce(result->>'tracking_token', '') = '' then
+              raise exception 'Tracking token was not returned';
+            end if;
+            delete from public.customer_device_tokens where fcm_token = test_token;
+          end $$;
+          rollback;
+          SQL
+
+      - name: Deploy push senders
+        run: |
+          set -euo pipefail
+          supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
+          supabase functions deploy send-marketing-push --project-ref "$PROJECT_REF" --workdir backend-updates
+          supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
+
+      - name: Verify live backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regprocedure('public.register_customer_device(uuid,text,text,text,text,text)') is not null and to_regprocedure('public.get_customer_tracking(text,uuid)') is not null and to_regprocedure('public.notify_rider_approaching(uuid,numeric,numeric)') is not null then 'ok' else 'missing' end;")
           test "$result" = "ok"
           supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/functions.json
           python3 - <<'PY'
           import json
-          payload = json.load(open('/tmp/functions.json', encoding='utf-8'))
-          rows = payload.get('functions', []) if isinstance(payload, dict) else payload
-          names = {str(row.get('name') or row.get('slug')) for row in rows}
-          required = {'send-push-notification', 'send-marketing-push', 'push-order-status'}
-          missing = required - names
-          if missing:
-              raise SystemExit('Missing deployed functions: ' + ', '.join(sorted(missing)))
+          payload=json.load(open('/tmp/functions.json',encoding='utf-8'))
+          rows=payload.get('functions',[]) if isinstance(payload,dict) else payload
+          names={str(row.get('name') or row.get('slug')) for row in rows}
+          required={'send-push-notification','send-marketing-push','push-order-status'}
+          missing=required-names
+          if missing: raise SystemExit('Missing deployed functions: '+', '.join(sorted(missing)))
           print('Live customer push backend verified.')
           PY

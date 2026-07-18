@@ -2,10 +2,6 @@ name: Customer Push Backend
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-customer-push-backend.yml'
   pull_request:
     branches: [main]
     paths:
@@ -19,11 +15,7 @@ on:
       - '.github/workflows/deploy-customer-push-backend.yml'
 
 permissions:
-  contents: write
-
-concurrency:
-  group: customer-push-live-deploy
-  cancel-in-progress: true
+  contents: read
 
 jobs:
   validate:
@@ -49,7 +41,7 @@ jobs:
           grep -q 'notify_rider_approaching' backend-updates/migrate-mobile-app-v11-guest-push-history.sql
 
   deploy:
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch'
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -59,28 +51,18 @@ jobs:
       PROJECT_REF: amjhrejmcnthlrqddznw
     steps:
       - uses: actions/checkout@v4
-
-      - id: setup_cli
-        name: Set up Supabase CLI
-        continue-on-error: true
-        uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v1
         with:
           version: latest
 
-      - id: credentials
-        name: Verify deployment credentials
-        if: steps.setup_cli.outcome == 'success'
-        continue-on-error: true
+      - name: Verify deployment credentials
         shell: bash
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then echo '::error::Missing repository secret SUPABASE_ACCESS_TOKEN'; exit 1; fi
           if [ -z "${SUPABASE_DB_URL:-}" ]; then echo '::error::Missing repository secret SUPABASE_DB_URL'; exit 1; fi
 
-      - id: pooler
-        name: Discover authenticated IPv4 Supavisor session pooler
-        if: steps.credentials.outcome == 'success'
-        continue-on-error: true
+      - name: Discover authenticated IPv4 Supavisor session pooler
         shell: bash
         run: |
           set -euo pipefail
@@ -96,167 +78,61 @@ jobs:
           if not project:
               raise SystemExit('Supabase project was not found for the configured access token')
           region = str(project.get('region') or '').strip()
-          if not region:
-              raise SystemExit('Supabase project region was not returned')
-
           direct = urlsplit(os.environ['SUPABASE_DB_URL'])
-          if not direct.password:
-              raise SystemExit('Database password is missing from SUPABASE_DB_URL')
+          if not region or not direct.password:
+              raise SystemExit('Project region or database password is unavailable')
+
           username = quote(f'postgres.{project_ref}', safe='')
           password = quote(unquote(direct.password), safe='')
-
           selected = None
-          selected_cluster = None
-          failures = []
           for cluster in range(10):
-              host = f'aws-{cluster}-{region}.pooler.supabase.com'
-              candidate = f'postgresql://{username}:{password}@{host}:5432/postgres?sslmode=require'
+              candidate = f'postgresql://{username}:{password}@aws-{cluster}-{region}.pooler.supabase.com:5432/postgres?sslmode=require'
               print(f'::add-mask::{candidate}')
-              try:
-                  probe = subprocess.run(
-                      ['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'],
-                      capture_output=True, text=True, timeout=20
-                  )
-              except subprocess.TimeoutExpired:
-                  failures.append(f'{host}: timeout')
-                  continue
+              probe = subprocess.run(
+                  ['psql', candidate, '-v', 'ON_ERROR_STOP=1', '-Atqc', 'select 1'],
+                  capture_output=True, text=True, timeout=20
+              )
               if probe.returncode == 0 and probe.stdout.strip() == '1':
                   selected = candidate
-                  selected_cluster = cluster
+                  print(f'Using Supavisor aws-{cluster} in {region}.')
                   break
-              error_line = (probe.stderr or probe.stdout).strip().splitlines()
-              failures.append(f'{host}: {error_line[-1] if error_line else "connection failed"}')
-
           if not selected:
-              print('No authenticated Supavisor session endpoint was found:')
-              for failure in failures:
-                  print(f'- {failure}')
-              raise SystemExit(1)
-
+              raise SystemExit('No authenticated IPv4 Supavisor session endpoint was found')
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env_file:
               env_file.write(f'POOLER_DB_URL={selected}\n')
-          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output_file:
-              output_file.write(f'region={region}\n')
-              output_file.write(f'cluster=aws-{selected_cluster}\n')
-          print(f'Using authenticated IPv4 Supavisor session pooler aws-{selected_cluster} in region {region}.')
           PY
 
-      - id: migration_v11
-        name: Apply guest push and history migration
-        if: steps.pooler.outcome == 'success'
-        continue-on-error: true
+      - name: Apply guest push and order-history migrations
         shell: bash
         run: |
-          set +e
-          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11-guest-push-history.sql > /tmp/migration-v11.log 2>&1
-          code=$?
-          cat /tmp/migration-v11.log
-          exit "$code"
+          set -euo pipefail
+          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11-guest-push-history.sql
+          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql
 
-      - id: migration_v11b
-        name: Correct history trigger ordering
-        if: steps.migration_v11.outcome == 'success'
-        continue-on-error: true
-        shell: bash
-        run: |
-          set +e
-          psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -f backend-updates/migrate-mobile-app-v11b-history-trigger-order.sql > /tmp/migration-v11b.log 2>&1
-          code=$?
-          cat /tmp/migration-v11b.log
-          exit "$code"
-
-      - id: automatic_sender
-        name: Deploy automatic status sender
-        if: steps.migration_v11b.outcome == 'success'
-        continue-on-error: true
+      - name: Deploy automatic status sender
         run: supabase functions deploy send-push-notification --project-ref "$PROJECT_REF" --no-verify-jwt --workdir backend-updates
 
-      - id: marketing_sender
-        name: Deploy POS marketing sender
-        if: steps.automatic_sender.outcome == 'success'
-        continue-on-error: true
+      - name: Deploy POS marketing sender
         run: supabase functions deploy send-marketing-push --project-ref "$PROJECT_REF" --workdir backend-updates
 
-      - id: staff_sender
-        name: Deploy staff status sender
-        if: steps.marketing_sender.outcome == 'success'
-        continue-on-error: true
+      - name: Deploy staff status sender
         run: supabase functions deploy push-order-status --project-ref "$PROJECT_REF" --workdir backend-updates
 
-      - name: Record safe deployment diagnostics
-        if: always()
-        env:
-          SETUP_RESULT: ${{ steps.setup_cli.outcome }}
-          CREDENTIALS_RESULT: ${{ steps.credentials.outcome }}
-          POOLER_RESULT: ${{ steps.pooler.outcome }}
-          POOLER_REGION: ${{ steps.pooler.outputs.region }}
-          POOLER_CLUSTER: ${{ steps.pooler.outputs.cluster }}
-          MIGRATION_V11_RESULT: ${{ steps.migration_v11.outcome }}
-          MIGRATION_V11B_RESULT: ${{ steps.migration_v11b.outcome }}
-          AUTOMATIC_RESULT: ${{ steps.automatic_sender.outcome }}
-          MARKETING_RESULT: ${{ steps.marketing_sender.outcome }}
-          STAFF_RESULT: ${{ steps.staff_sender.outcome }}
-          SOURCE_SHA: ${{ github.sha }}
+      - name: Verify live database objects and Edge Functions
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p backend-updates/deployment-status
-          {
-            echo "customer_push_backend"
-            echo "validate=success"
-            echo "setup_cli=$SETUP_RESULT"
-            echo "credentials=$CREDENTIALS_RESULT"
-            echo "pooler=$POOLER_RESULT"
-            echo "pooler_region=${POOLER_REGION:-unknown}"
-            echo "pooler_cluster=${POOLER_CLUSTER:-unknown}"
-            echo "migration_v11=$MIGRATION_V11_RESULT"
-            echo "migration_v11b=$MIGRATION_V11B_RESULT"
-            echo "automatic_sender=$AUTOMATIC_RESULT"
-            echo "marketing_sender=$MARKETING_RESULT"
-            echo "staff_sender=$STAFF_RESULT"
-            echo "source_sha=$SOURCE_SHA"
-            echo "recorded_at_utc=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          } > backend-updates/deployment-status/customer-push-live.txt
-
+          result=$(psql "$POOLER_DB_URL" -v ON_ERROR_STOP=1 -Atqc "select case when to_regclass('public.customer_installations') is not null and to_regclass('public.customer_device_tokens') is not null and to_regclass('public.customer_status_history') is not null and to_regprocedure('public.register_customer_installation(uuid,text,text,text)') is not null and to_regprocedure('public.register_customer_device(uuid,text,text,text,text,text)') is not null and to_regprocedure('public.get_customer_tracking(text,uuid)') is not null and to_regprocedure('public.notify_rider_approaching(uuid,numeric,numeric)') is not null then 'ok' else 'missing' end;")
+          test "$result" = "ok"
+          supabase functions list --project-ref "$PROJECT_REF" --output json > /tmp/functions.json
           python3 - <<'PY'
-          import os, re
-          parts = []
-          for label, path in [('migration_v11', '/tmp/migration-v11.log'), ('migration_v11b', '/tmp/migration-v11b.log')]:
-              if not os.path.exists(path):
-                  continue
-              text = open(path, encoding='utf-8', errors='replace').read()
-              for secret_name in ('SUPABASE_DB_URL', 'POOLER_DB_URL'):
-                  secret = os.environ.get(secret_name, '')
-                  if secret:
-                      text = text.replace(secret, '[REDACTED_DB_URL]')
-              text = re.sub(r'postgres(?:ql)?://\S+', '[REDACTED_DB_URL]', text, flags=re.I)
-              text = re.sub(r'password=\S+', 'password=[REDACTED]', text, flags=re.I)
-              parts.append(f'[{label}]\n' + '\n'.join(text.splitlines()[-100:]))
-          target = 'backend-updates/deployment-status/customer-push-migration-diagnostic.txt'
-          if parts:
-              open(target, 'w', encoding='utf-8').write('\n\n'.join(parts) + '\n')
-          elif os.path.exists(target):
-              os.remove(target)
+          import json
+          payload = json.load(open('/tmp/functions.json', encoding='utf-8'))
+          rows = payload.get('functions', []) if isinstance(payload, dict) else payload
+          names = {str(row.get('name') or row.get('slug')) for row in rows}
+          required = {'send-push-notification', 'send-marketing-push', 'push-order-status'}
+          missing = required - names
+          if missing:
+              raise SystemExit('Missing deployed functions: ' + ', '.join(sorted(missing)))
+          print('Live customer push backend verified.')
           PY
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A backend-updates/deployment-status
-          git commit -m 'Record customer push deployment diagnostics' || true
-          git push origin HEAD:main
-
-      - name: Fail when any deployment stage failed
-        if: always()
-        env:
-          SETUP_RESULT: ${{ steps.setup_cli.outcome }}
-          CREDENTIALS_RESULT: ${{ steps.credentials.outcome }}
-          POOLER_RESULT: ${{ steps.pooler.outcome }}
-          MIGRATION_V11_RESULT: ${{ steps.migration_v11.outcome }}
-          MIGRATION_V11B_RESULT: ${{ steps.migration_v11b.outcome }}
-          AUTOMATIC_RESULT: ${{ steps.automatic_sender.outcome }}
-          MARKETING_RESULT: ${{ steps.marketing_sender.outcome }}
-          STAFF_RESULT: ${{ steps.staff_sender.outcome }}
-        run: |
-          set -euo pipefail
-          for result in "$SETUP_RESULT" "$CREDENTIALS_RESULT" "$POOLER_RESULT" "$MIGRATION_V11_RESULT" "$MIGRATION_V11B_RESULT" "$AUTOMATIC_RESULT" "$MARKETING_RESULT" "$STAFF_RESULT"; do
-            [ "$result" = "success" ] || exit 1
-          done

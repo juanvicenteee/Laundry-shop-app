@@ -1,4 +1,5 @@
 'use strict';
+// Bubbly-fi Operations v2.6.13 — automatic capacity-based load splitting
 
 const SUPABASE_URL = 'https://amjhrejmcnthlrqddznw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5KkgIxPlTNAZjqgRX9Yh3A_tqLD2hNE';
@@ -499,6 +500,38 @@ function loadTypeCapacity(itemType = state.draft.itemType) {
   const type = loadTypes[itemType] || loadTypes.assorted_clothes;
   return Math.max(type.unit === 'pc' ? 1 : 0.5, Number(state.settings[type.capacityKey] ?? type.capacity) || type.capacity);
 }
+function quantityText(value, unit = 'kg') {
+  const number = unit === 'pc' ? Math.round(Number(value) || 0) : Math.round((Number(value) || 0) * 10) / 10;
+  return `${Number.isInteger(number) ? number : number.toFixed(1)} ${unit}`;
+}
+function loadDistribution(total, capacity, unit = 'kg') {
+  const parts = [];
+  let remaining = unit === 'pc' ? Math.round(Number(total) || 0) : Math.round((Number(total) || 0) * 10) / 10;
+  while (remaining > 0 && parts.length < 15) {
+    const part = unit === 'pc' ? Math.round(Math.min(capacity, remaining)) : Math.round(Math.min(capacity, remaining) * 10) / 10;
+    parts.push(part);
+    remaining = unit === 'pc' ? Math.round(remaining - part) : Math.round((remaining - part) * 10) / 10;
+  }
+  return parts;
+}
+function renderAutoLoadNotice(calc = calculateDraft()) {
+  let notice = $('#posAutoLoadNotice');
+  if (!notice) {
+    notice = document.createElement('div');
+    notice.id = 'posAutoLoadNotice';
+    notice.className = 'hidden';
+    notice.style.cssText = 'margin:14px 0;padding:15px 17px;border:1px solid #dfb542;border-left:7px solid #d8a528;border-radius:14px;background:#fff9e8;color:#4c3810;font:14px/1.5 system-ui';
+    notice.innerHTML = '<strong style="display:block;font-size:16px;margin-bottom:4px">Loads adjusted automatically</strong><p style="margin:0"></p>';
+    const anchor = $('#summaryCard') || $('#orderSummary') || $('#summaryTotal')?.closest('section,div');
+    anchor?.parentNode?.insertBefore(notice, anchor);
+  }
+  if (!notice) return;
+  if (calc.loads <= 1) { notice.classList.add('hidden'); notice.querySelector('p').textContent = ''; return; }
+  const parts = loadDistribution(state.draft.quantity, calc.capacity, calc.unit);
+  const message = `${quantityText(state.draft.quantity, calc.unit)} exceeds the ${quantityText(calc.capacity, calc.unit)} capacity of one ${calc.itemType.label.toLowerCase()} load. The order is set to ${calc.loads} loads (${parts.map(value => quantityText(value, calc.unit)).join(' + ')}). The selected service, products, temperature and add-ons apply to every load. Pricing and payment total were recalculated.`;
+  notice.querySelector('p').textContent = message;
+  notice.classList.remove('hidden');
+}
 function calculateDraft() {
   const service = services[state.draft.service] || services.wash_dry_fold;
   const place = places[state.draft.place];
@@ -789,6 +822,7 @@ function renderSummary() {
   $('#summaryDetergent').textContent=calc.hasWash?(detergent ? `${detergent.name} · ${peso.format(detergent.pricePerLoad)}/load` : 'Not selected'):'Not required';
   $('#summaryConditioner').textContent=calc.hasWash?(conditioner ? `${conditioner.name} · ${peso.format(conditioner.pricePerLoad)}/load` : 'Not selected'):'Not required';
   $('#summaryTotal').textContent=peso.format(calc.total);
+  renderAutoLoadNotice(calc);
 }
 function resetDraft() {
   const walkin=state.customers.find(c=>c.name==='Walk-in Customer'&&!c.is_archived); state.draft={customerId:walkin?.id||state.customers[0]?.id||null,service:'wash_dry_fold',itemType:'assorted_clothes',fullService:false,place:'cubao',delivery:false,quantity:loadTypeCapacity('assorted_clothes'),payment:'Cash',detergentChoice:'',conditionerChoice:'',extraDry:false,extraWash:false,warmHotWash:false,zonroxColorsafe:false,extraDetergent:false,extraConditioner:false};
@@ -1085,7 +1119,7 @@ function bindEvents(){
   $('#detergentChoices').addEventListener('click',e=>{const b=e.target.closest('[data-detergent-choice]');if(!b||b.disabled)return;state.draft.detergentChoice=b.dataset.detergentChoice;renderPosChoices();});
   $('#conditionerChoices').addEventListener('click',e=>{const b=e.target.closest('[data-conditioner-choice]');if(!b||b.disabled)return;state.draft.conditionerChoice=b.dataset.conditionerChoice;renderPosChoices();});
   $('#paymentChoices').addEventListener('click',e=>{const b=e.target.closest('[data-payment]');if(!b)return;state.draft.payment=b.dataset.payment;renderPosChoices();});
-  $$('.quantity-box button').forEach(b=>b.addEventListener('click',()=>{const unit=currentLoadType().unit;const min=unit==='pc'?1:.5;state.draft.quantity=Math.max(min,Number(state.draft.quantity)+Number(b.dataset.qty));renderSummary();}));
+  $$('.quantity-box button').forEach(b=>b.addEventListener('click',()=>{const before=calculateDraft(),unit=currentLoadType().unit,min=unit==='pc'?1:.5;state.draft.quantity=Math.max(min,Number(state.draft.quantity)+Number(b.dataset.qty));const after=calculateDraft();renderSummary();if(after.loads>before.loads){const parts=loadDistribution(state.draft.quantity,after.capacity,after.unit);const message=`${quantityText(state.draft.quantity,after.unit)} exceeds the ${quantityText(after.capacity,after.unit)} capacity of one ${after.itemType.label.toLowerCase()} load. The order was changed from ${before.loads} to ${after.loads} loads (${parts.map(value=>quantityText(value,after.unit)).join(' + ')}). The same service, products, temperature and add-ons apply to every load. Pricing and payment total were recalculated.`;toast(message,9000);try{alert(message)}catch{}}}));
   $('#saveOrderBtn').addEventListener('click',saveOrder);$('#resetOrderBtn').addEventListener('click',resetDraft);
   $('#newCustomerQuick').addEventListener('click',()=>{state.page='customers';renderPage();$('#customerName').focus();});
   $('#orderSearch').addEventListener('input',renderOrders);$('#orderStatusFilter').addEventListener('change',renderOrders);

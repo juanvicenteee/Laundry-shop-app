@@ -14,5 +14,5 @@ candidate_count=10
 cleanup_step=success
 production_function_verification=success
 smoke_response={"ok":true,"delivered":1,"source":"phone","token":"eX7Emu\u2026z_vqd8","fcm_status":200,"attempted_tokens":1,"candidate_count":10}
-source_sha=0c7bb2e513c6ab828b197f34d4f420ecf9fc3b48
-recorded_at_utc=2026-07-19T00:30:08Z
+source_sha=3d807f5cdb95d84bf35e26a76c9013e20ad1db68
+recorded_at_utc=2026-07-19T00:54:38Z

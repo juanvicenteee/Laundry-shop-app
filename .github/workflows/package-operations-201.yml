@@ -1,4 +1,4 @@
-name: Package Operations 2.0.1
+name: Diagnose Operations 2.0.1 Build
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 jobs:
-  package:
+  diagnose:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,42 +23,26 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build and collect diagnostics
-        id: build
-        continue-on-error: true
+      - name: Build release and preserve diagnostics
         shell: bash
         run: |
-          mkdir -p release
+          mkdir -p build-diagnostics
           sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/' operations-android/app/build.gradle.kts
           sed -i 's/isShrinkResources = true/isShrinkResources = false/' operations-android/app/build.gradle.kts
           cd operations-android
           chmod +x gradlew
           set +e
-          ./gradlew :app:clean :app:assembleRelease :app:bundleRelease --stacktrace 2>&1 | tee ../release/gradle-build.log
-          status=${PIPESTATUS[0]}
-          find app/build/outputs -maxdepth 8 -type f -print 2>/dev/null | sort | tee ../release/output-files.txt || true
-          find app/build/outputs/apk -type f -name '*.apk' -exec cp {} ../release/ \; 2>/dev/null || true
-          find app/build/outputs/bundle -type f -name '*.aab' -exec cp {} ../release/ \; 2>/dev/null || true
+          ./gradlew :app:clean :app:assembleRelease :app:bundleRelease --stacktrace > ../build-diagnostics/full.log 2>&1
+          status=$?
           cd ..
-          echo "$status" > release/gradle-exit-code.txt
-          sha256sum release/*.apk release/*.aab > release/SHA256SUMS.txt 2>/dev/null || true
-          exit $status
-      - id: upload
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bubblyfi-operations-2.0.1-build-output
-          path: release/*
-          retention-days: 7
-          if-no-files-found: error
-      - name: Record downloadable artifact ID
-        if: always() && steps.upload.outputs.artifact-id != ''
-        shell: bash
-        run: |
-          printf '%s\n' '${{ steps.upload.outputs.artifact-id }}' > release-artifact-id-operations.txt
-          printf '%s\n' '${{ github.run_id }}' > release-run-id-operations.txt
+          printf '%s\n' "$status" > build-diagnostics/exit-code.txt
+          tail -n 240 build-diagnostics/full.log > build-diagnostics/log-tail.txt
+          find operations-android/app/build/outputs -maxdepth 8 -type f -print 2>/dev/null | sort > build-diagnostics/output-files.txt || true
+          rm -f build-diagnostics/full.log
+          git checkout -- operations-android/app/build.gradle.kts
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add release-artifact-id-operations.txt release-run-id-operations.txt
-          git commit -m 'Record Operations 2.0.1 build output ID'
+          git add build-diagnostics
+          git commit -m 'Record Operations 2.0.1 Gradle diagnostics'
           git push origin HEAD:${{ github.head_ref || github.ref_name }}
+          exit 0

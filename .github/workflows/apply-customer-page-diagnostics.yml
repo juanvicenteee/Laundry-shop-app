@@ -1,0 +1,99 @@
+name: Apply Customer Page Diagnostics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-customer-page-diagnostics.yml'
+      - 'operations-android/app/src/main/assets/www/customer-notification-diagnostics.js'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-customer-page-diagnostics.yml'
+      - 'operations-android/app/src/main/assets/www/customer-notification-diagnostics.js'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply overlay and patch customer HTML
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_js='operations-android/app/src/main/assets/www/customer-notification-diagnostics.js'
+          cp "$source_js" customer-android/app/src/main/assets/www/customer-notification-diagnostics.js
+          mkdir -p netlify-customer-overlay
+          cp "$source_js" netlify-customer-overlay/customer-notification-diagnostics.js
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          tag = '  <script src="customer-notification-diagnostics.js?v=1.0.0" data-cfasync="false"></script>'
+          targets = [
+              Path('operations-android/app/src/main/assets/www/customer.html'),
+              Path('customer-android/app/src/main/assets/www/index.html'),
+          ]
+          for path in targets:
+              text = path.read_text(encoding='utf-8')
+              if 'customer-notification-diagnostics.js' not in text:
+                  if '</body>' not in text:
+                      raise SystemExit(f'Missing </body> in {path}')
+                  text = text.replace('</body>', f'{tag}\n</body>', 1)
+                  path.write_text(text, encoding='utf-8')
+
+          readme = '''Bubbly-fi /customer notification diagnostics overlay
+
+Files
+- customer-notification-diagnostics.js
+
+Apply to the current complete Netlify website
+1. Copy customer-notification-diagnostics.js beside customer.html.
+2. Add this line immediately before </body> in customer.html:
+   <script src="customer-notification-diagnostics.js?v=1.0.0" data-cfasync="false"></script>
+3. Deploy the complete website folder to Netlify.
+
+Behavior
+- The Test alerts button appears only inside Bubbly-fi Customer Android v1.6.14 or newer.
+- Normal desktop/mobile browser visitors see no Android-only control.
+- Booking, pricing, uploads, CAPTCHA and payment code are unchanged.
+'''
+          Path('netlify-customer-overlay/README.txt').write_text(readme, encoding='utf-8')
+          PY
+
+      - name: Verify patched sources
+        run: |
+          set -euo pipefail
+          node --check operations-android/app/src/main/assets/www/customer-notification-diagnostics.js
+          node --check customer-android/app/src/main/assets/www/customer-notification-diagnostics.js
+          test "$(grep -c 'customer-notification-diagnostics.js' operations-android/app/src/main/assets/www/customer.html)" -eq 1
+          test "$(grep -c 'customer-notification-diagnostics.js' customer-android/app/src/main/assets/www/index.html)" -eq 1
+          grep -q 'notificationDiagnostics' netlify-customer-overlay/customer-notification-diagnostics.js
+          grep -q 'sendServerNotificationTest' netlify-customer-overlay/customer-notification-diagnostics.js
+
+      - name: Remove temporary inspection workflows
+        run: |
+          rm -f .github/workflows/customer-page-source-snapshot.yml
+          rm -f .github/workflows/apply-customer-page-diagnostics.yml
+
+      - name: Commit generated customer page update
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No generated changes.'
+            exit 0
+          fi
+          git commit -m 'Apply notification diagnostics to customer HTML'
+          git push origin HEAD:${{ github.head_ref || github.ref_name }}

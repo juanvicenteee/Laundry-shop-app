@@ -1,0 +1,43 @@
+name: Customer Page Source Snapshot
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/customer-page-source-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect web source
+        run: |
+          set -euo pipefail
+          mkdir -p snapshot
+          find . -path './.git' -prune -o -type f -print | sort > snapshot/file-list.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+          root=Path('.')
+          out=Path('snapshot/source')
+          keep={'.html','.htm','.js','.mjs','.cjs','.ts','.tsx','.jsx','.css','.json','.toml','.yaml','.yml','.md'}
+          for p in root.rglob('*'):
+              if not p.is_file() or '.git' in p.parts or 'snapshot' in p.parts:
+                  continue
+              if p.suffix.lower() not in keep and p.name not in {'_redirects','_headers'}:
+                  continue
+              target=out/p
+              target.parent.mkdir(parents=True,exist_ok=True)
+              shutil.copy2(p,target)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: customer-page-source-snapshot
+          path: snapshot/
+          if-no-files-found: error
+          retention-days: 2

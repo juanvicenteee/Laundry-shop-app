@@ -1,0 +1,48 @@
+name: Package Operations 2.0.1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/package-operations-201.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build and collect
+        id: gradle
+        continue-on-error: true
+        shell: bash
+        run: |
+          mkdir -p release
+          sed -i 's/isMinifyEnabled = true/isMinifyEnabled = false/' operations-android/app/build.gradle.kts
+          sed -i 's/isShrinkResources = true/isShrinkResources = false/' operations-android/app/build.gradle.kts
+          cd operations-android
+          chmod +x gradlew
+          set +e
+          ./gradlew :app:clean :app:assembleRelease :app:bundleRelease --stacktrace 2>&1 | tee ../release/gradle-build.log
+          status=${PIPESTATUS[0]}
+          find app/build/outputs -type f -maxdepth 8 -print | sort | tee ../release/output-files.txt || true
+          find app/build/outputs/apk -type f -name '*.apk' -exec cp {} ../release/ \; 2>/dev/null || true
+          find app/build/outputs/bundle -type f -name '*.aab' -exec cp {} ../release/ \; 2>/dev/null || true
+          echo "$status" > ../release/gradle-exit-code.txt
+          exit $status
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bubblyfi-operations-2.0.1-build-diagnostic
+          path: release/*
+          retention-days: 7

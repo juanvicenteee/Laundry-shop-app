@@ -98,4 +98,4 @@ Behavior
           git commit -m 'Apply notification diagnostics to customer HTML'
           git push origin HEAD:${{ github.head_ref || github.ref_name }}
 
-# One-time trigger revision.
+# Registered-workflow pull request trigger.

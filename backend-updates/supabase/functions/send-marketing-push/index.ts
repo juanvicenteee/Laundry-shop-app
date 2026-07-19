@@ -1,6 +1,6 @@
 import { corsHeaders, json, requireStaff, serviceClient, sendMany } from '../_shared/common.ts';
 
-type Recipient = { token: string; user_id?: string | null; area?: string | null; source: 'account' | 'installation' | 'booking' };
+type Recipient = { token: string; user_id?: string | null; area?: string | null; source: 'account' | 'installation' | 'phone' | 'booking' };
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -38,6 +38,14 @@ Deno.serve(async (req) => {
       if (row.fcm_token) recipients.push({ token: row.fcm_token, area: row.area, source: 'installation' });
     }
 
+    let phoneQuery = db.from('customer_phone_devices').select('fcm_token,area').eq('enabled', true);
+    if (area !== 'all') phoneQuery = phoneQuery.eq('area', area);
+    const { data: phoneTokens, error: phoneError } = await phoneQuery;
+    if (phoneError && phoneError.code !== '42P01') throw phoneError;
+    for (const row of phoneTokens || []) {
+      if (row.fcm_token) recipients.push({ token: row.fcm_token, area: row.area, source: 'phone' });
+    }
+
     let bookingQuery = db.from('customer_device_tokens').select('fcm_token,area').eq('enabled', true);
     if (area !== 'all') bookingQuery = bookingQuery.eq('area', area);
     const { data: bookingTokens, error: bookingError } = await bookingQuery;
@@ -63,6 +71,7 @@ Deno.serve(async (req) => {
       await Promise.all([
         db.from('device_push_tokens').update({ active: false }).in('token', invalid),
         db.from('customer_installations').update({ enabled: false }).in('fcm_token', invalid),
+        db.from('customer_phone_devices').update({ enabled: false }).in('fcm_token', invalid),
         db.from('customer_device_tokens').update({ enabled: false }).in('fcm_token', invalid),
       ]);
     }
@@ -77,6 +86,7 @@ Deno.serve(async (req) => {
       sources: {
         account: [...unique.values()].filter((row) => row.source === 'account').length,
         guest_installation: [...unique.values()].filter((row) => row.source === 'installation').length,
+        phone_history: [...unique.values()].filter((row) => row.source === 'phone').length,
         guest_booking: [...unique.values()].filter((row) => row.source === 'booking').length,
       },
     });

@@ -104,9 +104,9 @@ function firebaseConfig(): FirebaseConfig {
   if (serviceAccountJson) {
     try {
       const serviceAccount = parseServiceAccount(serviceAccountJson);
-      clientEmail ||= serviceAccount.client_email || '';
-      privateKey ||= serviceAccount.private_key || '';
-      projectId ||= serviceAccount.project_id || '';
+      clientEmail = serviceAccount.client_email || clientEmail;
+      privateKey = serviceAccount.private_key || privateKey;
+      projectId = serviceAccount.project_id || projectId;
     } catch (error) {
       throw new Error(`FIREBASE_SERVICE_ACCOUNT_JSON is invalid: ${error instanceof Error ? error.message : String(error)}`);
     }

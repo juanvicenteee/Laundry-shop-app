@@ -43,6 +43,56 @@ export async function requireStaff(req: Request, adminOnly = false) {
 type FirebaseConfig = { clientEmail: string; privateKey: string; projectId: string };
 let cachedFirebaseConfig: FirebaseConfig | null = null;
 
+function parseServiceAccount(value: string) {
+  let parsed: unknown = JSON.parse(value);
+  for (let attempt = 0; attempt < 2 && typeof parsed === 'string'; attempt += 1) {
+    parsed = JSON.parse(parsed);
+  }
+  if (!parsed || typeof parsed !== 'object') throw new Error('Firebase service-account value is not a JSON object');
+  return parsed as { client_email?: string; private_key?: string; project_id?: string };
+}
+
+function normalizePkcs8(value: string): string {
+  let key = String(value || '').trim();
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!(key.startsWith('"') && key.endsWith('"'))) break;
+    try {
+      const decoded = JSON.parse(key);
+      if (typeof decoded !== 'string') break;
+      key = decoded.trim();
+    } catch {
+      break;
+    }
+  }
+
+  key = key.replace(/\r\n?/g, '\n');
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const decoded = key.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
+    if (decoded === key) break;
+    key = decoded;
+  }
+  key = key.replace(/\\+\n/g, '\n');
+
+  const begin = '-----BEGIN PRIVATE KEY-----';
+  const end = '-----END PRIVATE KEY-----';
+  const beginIndex = key.indexOf(begin);
+  const endIndex = key.indexOf(end, beginIndex + begin.length);
+  if (beginIndex < 0 || endIndex < 0) throw new Error('Firebase private key header or footer is missing');
+
+  const body = key.slice(beginIndex + begin.length, endIndex).replace(/[^A-Za-z0-9+/=]/g, '');
+  if (body.length < 256) throw new Error('Firebase private key body is incomplete');
+  try {
+    atob(body);
+  } catch {
+    throw new Error('Firebase private key body is not valid base64');
+  }
+
+  const lines = body.match(/.{1,64}/g);
+  if (!lines?.length) throw new Error('Firebase private key body is empty');
+  return `${begin}\n${lines.join('\n')}\n${end}`;
+}
+
 function firebaseConfig(): FirebaseConfig {
   if (cachedFirebaseConfig) return cachedFirebaseConfig;
 
@@ -53,11 +103,7 @@ function firebaseConfig(): FirebaseConfig {
 
   if (serviceAccountJson) {
     try {
-      const serviceAccount = JSON.parse(serviceAccountJson) as {
-        client_email?: string;
-        private_key?: string;
-        project_id?: string;
-      };
+      const serviceAccount = parseServiceAccount(serviceAccountJson);
       clientEmail ||= serviceAccount.client_email || '';
       privateKey ||= serviceAccount.private_key || '';
       projectId ||= serviceAccount.project_id || '';
@@ -70,7 +116,7 @@ function firebaseConfig(): FirebaseConfig {
     throw new Error('Firebase service-account secrets are not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and FIREBASE_PROJECT_ID.');
   }
 
-  cachedFirebaseConfig = { clientEmail, privateKey, projectId };
+  cachedFirebaseConfig = { clientEmail, privateKey: normalizePkcs8(privateKey), projectId };
   return cachedFirebaseConfig;
 }
 
@@ -78,7 +124,7 @@ let cachedToken: { token: string; expiresAt: number } | null = null;
 async function googleAccessToken() {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token;
   const config = firebaseConfig();
-  const privateKey = await importPKCS8(config.privateKey.replace(/\\n/g, '\n'), 'RS256');
+  const privateKey = await importPKCS8(config.privateKey, 'RS256');
   const now = Math.floor(Date.now() / 1000);
   const assertion = await new SignJWT({ scope: 'https://www.googleapis.com/auth/firebase.messaging' })
     .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })

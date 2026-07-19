@@ -153,6 +153,7 @@ export async function sendFcm(message: PushMessage) {
   const config = firebaseConfig();
   const accessToken = await googleAccessToken();
   const channelId = message.channel === 'rider' ? 'rider_updates' : message.channel === 'promo' ? 'marketing_promos' : message.channel === 'reminder' ? 'booking_reminders' : 'order_updates';
+  const highPriority = message.channel === 'rider' || message.channel === 'promo';
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${config.projectId}/messages:send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -160,7 +161,7 @@ export async function sendFcm(message: PushMessage) {
       token: message.token,
       notification: { title: message.title, body: message.body },
       data: { channel: message.channel || 'order', ...(message.data || {}) },
-      android: { priority: message.channel === 'rider' ? 'high' : 'normal', notification: { channel_id: channelId, sound: 'default', default_vibrate_timings: true } },
+      android: { priority: highPriority ? 'high' : 'normal', notification: { channel_id: channelId, sound: 'default', default_vibrate_timings: true } },
     }}),
   });
   const payload = await response.json().catch(() => ({}));

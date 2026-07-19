@@ -8,7 +8,10 @@ export const corsHeaders = {
 };
 
 export function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 }
 
 export function serviceClient() {
@@ -36,25 +39,25 @@ export async function requireStaff(req: Request, adminOnly = false) {
   const db = serviceClient();
   const { data } = await db.from('profiles').select('role').eq('id', user.id).maybeSingle();
   const role = String(data?.role || '').toLowerCase();
-  if (!['admin', 'operator'].includes(role) || (adminOnly && role !== 'admin')) throw new Error(adminOnly ? 'Admin access required' : 'Staff access required');
+  if (!['admin', 'operator'].includes(role) || (adminOnly && role !== 'admin')) {
+    throw new Error(adminOnly ? 'Admin access required' : 'Staff access required');
+  }
   return { user, role };
 }
 
 type FirebaseConfig = { clientEmail: string; privateKey: string; projectId: string };
 let cachedFirebaseConfig: FirebaseConfig | null = null;
+let cachedToken: { token: string; expiresAt: number } | null = null;
 
 function parseServiceAccount(value: string) {
   let parsed: unknown = JSON.parse(value);
-  for (let attempt = 0; attempt < 2 && typeof parsed === 'string'; attempt += 1) {
-    parsed = JSON.parse(parsed);
-  }
+  for (let attempt = 0; attempt < 2 && typeof parsed === 'string'; attempt += 1) parsed = JSON.parse(parsed);
   if (!parsed || typeof parsed !== 'object') throw new Error('Firebase service-account value is not a JSON object');
   return parsed as { client_email?: string; private_key?: string; project_id?: string };
 }
 
 function normalizePkcs8(value: string): string {
   let key = String(value || '').trim();
-
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (!(key.startsWith('"') && key.endsWith('"'))) break;
     try {
@@ -65,7 +68,6 @@ function normalizePkcs8(value: string): string {
       break;
     }
   }
-
   key = key.replace(/\r\n?/g, '\n');
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const decoded = key.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\\r/g, '\n');
@@ -82,12 +84,7 @@ function normalizePkcs8(value: string): string {
 
   const body = key.slice(beginIndex + begin.length, endIndex).replace(/[^A-Za-z0-9+/=]/g, '');
   if (body.length < 256) throw new Error('Firebase private key body is incomplete');
-  try {
-    atob(body);
-  } catch {
-    throw new Error('Firebase private key body is not valid base64');
-  }
-
+  try { atob(body); } catch { throw new Error('Firebase private key body is not valid base64'); }
   const lines = body.match(/.{1,64}/g);
   if (!lines?.length) throw new Error('Firebase private key body is empty');
   return `${begin}\n${lines.join('\n')}\n${end}`;
@@ -95,12 +92,10 @@ function normalizePkcs8(value: string): string {
 
 function firebaseConfig(): FirebaseConfig {
   if (cachedFirebaseConfig) return cachedFirebaseConfig;
-
   let clientEmail = Deno.env.get('FIREBASE_CLIENT_EMAIL') || '';
   let privateKey = Deno.env.get('FIREBASE_PRIVATE_KEY') || '';
   let projectId = Deno.env.get('FIREBASE_PROJECT_ID') || '';
   const serviceAccountJson = Deno.env.get('FIREBASE_SERVICE_ACCOUNT_JSON');
-
   if (serviceAccountJson) {
     try {
       const serviceAccount = parseServiceAccount(serviceAccountJson);
@@ -111,16 +106,11 @@ function firebaseConfig(): FirebaseConfig {
       throw new Error(`FIREBASE_SERVICE_ACCOUNT_JSON is invalid: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-
-  if (!clientEmail || !privateKey || !projectId) {
-    throw new Error('Firebase service-account secrets are not configured. Set FIREBASE_SERVICE_ACCOUNT_JSON or FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and FIREBASE_PROJECT_ID.');
-  }
-
+  if (!clientEmail || !privateKey || !projectId) throw new Error('Firebase service-account secrets are not configured.');
   cachedFirebaseConfig = { clientEmail, privateKey: normalizePkcs8(privateKey), projectId };
   return cachedFirebaseConfig;
 }
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
 async function googleAccessToken() {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) return cachedToken.token;
   const config = firebaseConfig();
@@ -135,7 +125,8 @@ async function googleAccessToken() {
     .setExpirationTime(now + 3600)
     .sign(privateKey);
   const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }),
   });
   const payload = await response.json() as { access_token?: string; expires_in?: number; error?: string; error_description?: string };
@@ -145,24 +136,38 @@ async function googleAccessToken() {
 }
 
 export type PushMessage = {
-  title: string; body: string; channel?: 'order' | 'rider' | 'promo' | 'reminder';
-  data?: Record<string, string>; token: string;
+  title: string;
+  body: string;
+  channel?: 'order' | 'rider' | 'promo' | 'reminder';
+  data?: Record<string, string>;
+  token: string;
 };
 
 export async function sendFcm(message: PushMessage) {
   const config = firebaseConfig();
   const accessToken = await googleAccessToken();
-  const channelId = message.channel === 'rider' ? 'rider_updates' : message.channel === 'promo' ? 'marketing_promos' : message.channel === 'reminder' ? 'booking_reminders' : 'order_updates';
+  const channelId = message.channel === 'rider'
+    ? 'rider_updates'
+    : message.channel === 'promo'
+      ? 'broadcast_alerts_v2'
+      : message.channel === 'reminder'
+        ? 'booking_reminders'
+        : 'order_updates';
   const highPriority = message.channel === 'rider' || message.channel === 'promo';
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${config.projectId}/messages:send`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: {
-      token: message.token,
-      notification: { title: message.title, body: message.body },
-      data: { channel: message.channel || 'order', ...(message.data || {}) },
-      android: { priority: highPriority ? 'high' : 'normal', notification: { channel_id: channelId, sound: 'default', default_vibrate_timings: true } },
-    }}),
+    body: JSON.stringify({
+      message: {
+        token: message.token,
+        notification: { title: message.title, body: message.body },
+        data: { channel: message.channel || 'order', ...(message.data || {}) },
+        android: {
+          priority: highPriority ? 'high' : 'normal',
+          notification: { channel_id: channelId, sound: 'default', default_vibrate_timings: true },
+        },
+      },
+    }),
   });
   const payload = await response.json().catch(() => ({}));
   return { ok: response.ok, status: response.status, payload };

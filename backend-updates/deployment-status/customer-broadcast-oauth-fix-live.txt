@@ -14,5 +14,5 @@ candidate_count=
 cleanup_step=success
 production_function_verification=success
 smoke_response={"ok":false,"error":"\"pkcs8\" must be PKCS#8 formatted string"}
-source_sha=83a800213834c70d50e72ab7872e05328a2fb78f
-recorded_at_utc=2026-07-19T00:16:10Z
+source_sha=fc9b02551b6505385346010924d98187601ad5bd
+recorded_at_utc=2026-07-19T00:19:48Z

@@ -1,1 +1,1 @@
-run=2026-07-19-after-normalized-firebase-secret-repair
+run=2026-07-19-after-phone-recipient-fix

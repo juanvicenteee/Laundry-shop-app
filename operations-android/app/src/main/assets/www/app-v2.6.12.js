@@ -1,5 +1,5 @@
 'use strict';
-// Bubbly-fi Operations v2.6.13 — automatic capacity-based load splitting
+// Bubbly-fi Operations v2.6.14 — customer-submitted order details viewer
 
 const SUPABASE_URL = 'https://amjhrejmcnthlrqddznw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5KkgIxPlTNAZjqgRX9Yh3A_tqLD2hNE';
@@ -883,9 +883,10 @@ function renderOrders(){
   $('#ordersBody').innerHTML=rows.length?rows.map(o=>{
     const voided=Boolean(o.is_void);
     const statusCell=voided?`<span class="pill unpaid">VOID</span>`:`<select class="inline-status" data-order-status-id="${o.id}">${['Received','Washing','Drying','Ready','Claimed'].map(x=>`<option ${o.status===x?'selected':''}>${x}</option>`).join('')}</select>`;
+    const detailButton=`<button class="btn secondary compact" data-customer-order-details="${o.id}">Customer details</button>`;
     const actions=voided
-      ? `<span class="small">${escapeHtml(o.void_reason||'Voided')}</span>`
-      : `<button data-toggle-paid="${o.id}">${o.payment_status==='Paid'?'Unpay':'Pay'}</button>${o.status==='Ready'?`<button data-notify-rider="${o.id}">📍 On my way</button>`:''}${isAdmin()&&inventoryDeductionNeedsRepair(o)?`<button data-repair-inventory="${o.id}">Repair stock</button>`:''}${isAdmin()?`<button class="danger-action" data-void-order="${o.id}">Void</button>`:''}`;
+      ? `${detailButton}<span class="small">${escapeHtml(o.void_reason||'Voided')}</span>`
+      : `${detailButton}<button data-toggle-paid="${o.id}">${o.payment_status==='Paid'?'Unpay':'Pay'}</button>${o.status==='Ready'?`<button data-notify-rider="${o.id}">📍 On my way</button>`:''}${isAdmin()&&inventoryDeductionNeedsRepair(o)?`<button data-repair-inventory="${o.id}">Repair stock</button>`:''}${isAdmin()?`<button class="danger-action" data-void-order="${o.id}">Void</button>`:''}`;
     const includesWash=serviceIncludesWash(o.service_type,o.extra_wash);
     const recordedProductTotal=Number(o.wash_product_total ?? o.wash_product_adjustment) || 0;
     const washProducts=includesWash?`<div class="wash-products-cell"><strong>🧴 ${escapeHtml(o.detergent_name||'Not recorded')} · ${peso.format(Number(o.detergent_price_per_load)||0)}/load</strong><span>🌸 ${escapeHtml(o.conditioner_name||'Not recorded')} · ${peso.format(Number(o.conditioner_price_per_load)||0)}/load</span><span class="price-detail">Products: ${peso.format(recordedProductTotal)}</span></div>`:`<span class="small">Not required</span>`;
@@ -893,6 +894,36 @@ function renderOrders(){
     const optionsCell=optionLabels.length?`<div class="order-options-cell">${optionLabels.map(x=>`<span>${escapeHtml(x)}</span>`).join('')}</div>`:`<span class="small">None</span>`;
     return `<tr class="${voided?'muted-row':''}"><td>${formatDateTime(o.created_at)}</td><td><strong>${escapeHtml(o.receipt_no||'—')}</strong></td><td>${escapeHtml(o.customers?.name||'—')}</td><td>${escapeHtml(o.full_service?'Full Service':serviceLabel(o.service_type))}<span class="cell-sub">${escapeHtml((loadTypes[o.item_type]||loadTypes.assorted_clothes).label)} · ${o.quantity} ${escapeHtml(o.unit||'kg')}</span></td><td>${escapeHtml(places[o.place]?.label||o.place)}</td><td>${optionsCell}</td><td>${washProducts}</td><td>${statusCell}</td><td><span class="pill ${o.payment_status?.toLowerCase()}">${escapeHtml(o.payment_status)}</span></td><td><strong>${peso.format(o.total)}</strong></td><td><div class="row-actions">${actions}</div></td></tr>`;
   }).join(''):'<tr><td colspan="11" class="empty">No orders found.</td></tr>';
+}
+
+function customerRequestForOrder(order){
+  if(!order)return null;
+  return state.requests.find(request=>request.id===order.source_request_id||request.converted_order_id===order.id)||null;
+}
+function detailItem(label,value){
+  const text=String(value??'').trim();
+  return text?`<div class="customer-detail-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(text)}</strong></div>`:'';
+}
+function openCustomerOrderDetails(orderId){
+  const order=state.orders.find(row=>row.id===orderId);
+  if(!order)return toast('Order details were not found.');
+  const request=customerRequestForOrder(order)||{};
+  const value=(...keys)=>{for(const key of keys){const found=request[key]??order[key];if(found!==null&&found!==undefined&&String(found).trim()!=='')return found;}return'';};
+  const address=[value('building_unit'),value('address_line'),value('barangay'),value('city'),value('landmark')].filter(Boolean).join(', ')||value('full_address');
+  const notes=value('customer_notes','notes','special_instructions','order_notes');
+  const addonNotes=value('extra_handwash_notes','extra_hand_wash_notes','handwash_notes','addon_extra_handwash_notes','addon_notes','add_on_notes','extras_notes');
+  const otherDetails=value('other_details','additional_details','item_description');
+  const photos=[
+    request.pickup_photo_path?['Pickup photo',request.pickup_photo_path]:null,
+    ...(Array.isArray(request.item_photo_paths)?request.item_photo_paths:[]).map((path,index)=>[`Item photo ${index+1}`,path]),
+    request.payment_proof_path?['Payment proof',request.payment_proof_path]:null
+  ].filter(Boolean);
+  const addons=requestAddonLabels({...order,...request});
+  const contact=[detailItem('Customer',value('customer_name')||order.customers?.name),detailItem('Phone',value('phone')||order.customers?.phone),detailItem('Address',address),detailItem('Pickup schedule',value('pickup_at')),detailItem('Maps link',value('maps_url'))].join('');
+  const instructions=[detailItem('Customer notes',notes),detailItem('Extra handwash / add-on notes',addonNotes),detailItem('Item description / other details',otherDetails),detailItem('Item count',value('item_count')),detailItem('Bags',value('bags_count')),detailItem('Add-ons',addons.join(', '))].join('');
+  $('#customerDetailsTitle').textContent=`${order.receipt_no||'Order'} · ${order.customers?.name||request.customer_name||'Customer'}`;
+  $('#customerDetailsBody').innerHTML=`${contact?`<section class="customer-detail-card"><h3>Contact and pickup</h3><div class="customer-detail-grid">${contact}</div></section>`:''}${instructions?`<section class="customer-detail-card"><h3>Notes and order instructions</h3><div class="customer-detail-grid">${instructions}</div></section>`:''}<section class="customer-detail-card"><h3>Submitted photos</h3><div class="customer-detail-photos">${photos.length?photos.map(([label,path])=>`<button class="btn secondary compact" data-customer-detail-file="${escapeHtml(path)}">${escapeHtml(label)}</button>`).join(''):'<span class="small">No customer photos submitted.</span>'}</div></section>${!contact&&!instructions&&!photos.length?'<div class="customer-detail-empty">No customer-submitted details are linked to this order.</div>':''}`;
+  $('#customerDetailsDialog').showModal();
 }
 async function logAction(action, entityType, entityId = null, details = {}) {
   try {
@@ -1139,7 +1170,9 @@ function bindEvents(){
     }
   });
   $('#ordersBody').addEventListener('change',e=>{if(e.target.matches('[data-order-status-id]')){const o=state.orders.find(x=>x.id===e.target.dataset.orderStatusId);if(!o?.is_void)updateOrder(e.target.dataset.orderStatusId,{status:e.target.value},'status_change');}});
-  $('#ordersBody').addEventListener('click',async e=>{const pay=e.target.dataset.togglePaid,voidId=e.target.dataset.voidOrder,repairId=e.target.dataset.repairInventory,notifyId=e.target.dataset.notifyRider;if(notifyId){await notifyRiderApproaching(notifyId,e.target);return;}if(repairId){await repairOrderInventory(repairId);return;}if(pay){const o=state.orders.find(x=>x.id===pay);if(o?.is_void)return;await updateOrder(pay,{payment_status:o.payment_status==='Paid'?'Unpaid':'Paid'},'payment_change');}if(voidId){if(!isAdmin())return toast('Only Admin can void orders.');const reason=prompt('Reason for voiding this order:','Customer cancelled');if(!reason?.trim())return;const ok=await confirmAction('Void order','The order remains in history and cannot be used in sales totals.');if(!ok)return;const patch={is_void:true,void_reason:reason.trim(),voided_at:new Date().toISOString(),voided_by:state.profile.id,updated_by:state.profile.id};const{error}=await sb.from('orders').update(patch).eq('id',voidId);if(error)toast(error.message);else{await logAction('order_voided','order',voidId,{reason:reason.trim()});toast('Order voided');await loadCloudData();renderAll();}}});
+  $('#ordersBody').addEventListener('click',async e=>{const details=e.target.closest('[data-customer-order-details]');if(details){openCustomerOrderDetails(details.dataset.customerOrderDetails);return;}const pay=e.target.dataset.togglePaid,voidId=e.target.dataset.voidOrder,repairId=e.target.dataset.repairInventory,notifyId=e.target.dataset.notifyRider;if(notifyId){await notifyRiderApproaching(notifyId,e.target);return;}if(repairId){await repairOrderInventory(repairId);return;}if(pay){const o=state.orders.find(x=>x.id===pay);if(o?.is_void)return;await updateOrder(pay,{payment_status:o.payment_status==='Paid'?'Unpaid':'Paid'},'payment_change');}if(voidId){if(!isAdmin())return toast('Only Admin can void orders.');const reason=prompt('Reason for voiding this order:','Customer cancelled');if(!reason?.trim())return;const ok=await confirmAction('Void order','The order remains in history and cannot be used in sales totals.');if(!ok)return;const patch={is_void:true,void_reason:reason.trim(),voided_at:new Date().toISOString(),voided_by:state.profile.id,updated_by:state.profile.id};const{error}=await sb.from('orders').update(patch).eq('id',voidId);if(error)toast(error.message);else{await logAction('order_voided','order',voidId,{reason:reason.trim()});toast('Order voided');await loadCloudData();renderAll();}}});
+  $('#closeCustomerDetailsBtn').addEventListener('click',()=>$('#customerDetailsDialog').close());
+  $('#customerDetailsBody').addEventListener('click',e=>{const file=e.target.closest('[data-customer-detail-file]');if(file)openPrivateUpload(file.dataset.customerDetailFile);});
   $('#customerForm').addEventListener('submit',saveCustomer);$('#clearCustomerBtn').addEventListener('click',clearCustomerForm);
   $('#customersBody').addEventListener('click',async e=>{const edit=e.target.dataset.editCustomer,archive=e.target.dataset.archiveCustomer;if(edit){const c=state.customers.find(x=>x.id===edit);$('#customerId').value=c.id;$('#customerName').value=c.name;$('#customerPhone').value=c.phone||'';$('#customerPlace').value=c.default_place||'cubao';$('#customerNotes').value=c.notes||'';$('#customerFormTitle').textContent='Edit customer';}if(archive){if(!isAdmin())return toast('Only Admin can archive customers.');const c=state.customers.find(x=>x.id===archive);const next=!c.is_archived;const{error}=await sb.from('customers').update({is_archived:next,updated_by:state.profile.id}).eq('id',archive);if(error)toast(error.message);else{await logAction(next?'customer_archived':'customer_restored','customer',archive,{});toast(next?'Customer archived':'Customer restored');await loadCloudData();renderAll();}}});
   $('#inventoryForm').addEventListener('submit',saveInventory);$('#clearInventoryBtn').addEventListener('click',clearInventoryForm);$('#inventoryCategory').addEventListener('change',()=>updateInventoryPriceField(true));

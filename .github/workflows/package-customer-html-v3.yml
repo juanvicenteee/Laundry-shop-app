@@ -1,0 +1,86 @@
+name: Package Customer HTML v3.0.1
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'operations-android/app/src/main/assets/www/customer.html'
+      - 'operations-android/app/src/main/assets/www/customer.css'
+      - 'operations-android/app/src/main/assets/www/customer-v2.6.8.js'
+      - 'operations-android/app/src/main/assets/www/customer-notification-diagnostics.js'
+      - 'operations-android/app/src/main/assets/www/assets/**'
+      - '.github/workflows/package-customer-html-v3.yml'
+    paths-ignore:
+      - 'release-output/**'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate customer status enhancement
+        run: |
+          set -euo pipefail
+          node --check operations-android/app/src/main/assets/www/customer-v2.6.8.js
+          node --check operations-android/app/src/main/assets/www/customer-notification-diagnostics.js
+          grep -q 'customer-notification-diagnostics.js' operations-android/app/src/main/assets/www/customer.html
+          grep -q 'Ongoing delivery' operations-android/app/src/main/assets/www/customer-notification-diagnostics.js
+          grep -q 'Handwash' operations-android/app/src/main/assets/www/customer-notification-diagnostics.js
+          ! grep -q 'Test alerts' operations-android/app/src/main/assets/www/customer-notification-diagnostics.js
+      - name: Build deployable Customer HTML package
+        run: |
+          set -euo pipefail
+          src='operations-android/app/src/main/assets/www'
+          out='release-html/Bubblyfi-Customer-HTML-v3.0.1'
+          mkdir -p "$out/assets"
+          cp "$src/customer.html" "$out/customer.html"
+          cp "$src/customer.css" "$out/customer.css"
+          cp "$src/customer-v2.6.8.js" "$out/customer-v2.6.8.js"
+          cp "$src/customer-notification-diagnostics.js" "$out/customer-notification-diagnostics.js"
+          cp -R "$src/assets/." "$out/assets/"
+          cat > "$out/DEPLOY.txt" <<'EOF'
+          Bubbly-fi Customer HTML v3.0.1
+
+          Deploy the contents of this folder to the root of the existing Netlify site.
+          This package updates the customer booking page only. Keep the existing homepage
+          and operations files on the site.
+
+          Included changes:
+          - Handwash is highlighted under Options.
+          - My Orders shows the delivery lifecycle.
+          - Ongoing delivery, Arrived, and Delivered have prominent alerts.
+          - Order status refreshes every 30 seconds while My Orders is open.
+          - The temporary Test alerts button is removed.
+          EOF
+          (cd release-html && zip -qr Bubblyfi-Customer-HTML-v3.0.1.zip Bubblyfi-Customer-HTML-v3.0.1)
+          sha256sum release-html/Bubblyfi-Customer-HTML-v3.0.1.zip > release-html/SHA256SUMS.txt
+      - id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: bubblyfi-customer-html-v3.0.1
+          path: |
+            release-html/Bubblyfi-Customer-HTML-v3.0.1.zip
+            release-html/SHA256SUMS.txt
+          retention-days: 14
+          if-no-files-found: error
+      - name: Record downloadable artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-output
+          cat > release-output/customer-html-latest.txt <<EOF
+          version=3.0.1
+          run_id=${{ github.run_id }}
+          artifact_id=${{ steps.upload.outputs.artifact-id }}
+          artifact_name=bubblyfi-customer-html-v3.0.1
+          commit=${{ github.sha }}
+          EOF
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add release-output/customer-html-latest.txt
+          git commit -m 'Record Customer HTML v3.0.1 artifact [skip ci]'
+          git push

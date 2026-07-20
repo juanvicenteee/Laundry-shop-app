@@ -24,13 +24,13 @@ jobs:
       - name: Verify release identity
         run: |
           grep -F 'applicationId = "ph.bubblyfi.operations"' app/build.gradle.kts
-          grep -F 'versionCode = 4' app/build.gradle.kts
+          grep -F 'versionCode = 21' app/build.gradle.kts
           grep -F 'versionName = "2.0.1"' app/build.gradle.kts
       - name: Clean native Gradle bundle
         run: gradle --no-daemon clean bundleRelease
       - name: Upload unsigned release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: operations-2.0.1-native-aab
+          name: operations-2.0.1-code21-native-aab
           path: operations-android/app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error

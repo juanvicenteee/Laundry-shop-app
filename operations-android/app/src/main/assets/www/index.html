@@ -311,7 +311,17 @@
 
   <dialog id="confirmDialog"><form method="dialog"><h3 id="confirmTitle">Confirm</h3><p id="confirmText"></p><div class="dialog-actions"><button value="cancel" class="btn ghost">Cancel</button><button value="confirm" class="btn danger">Confirm</button></div></form></dialog>
 
+  <dialog id="customerDetailsDialog" class="customer-details-dialog">
+    <div class="customer-details-shell">
+      <div class="customer-details-heading">
+        <div><span class="eyebrow">Customer submission</span><h2 id="customerDetailsTitle">Order details</h2></div>
+        <button id="closeCustomerDetailsBtn" class="popup-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="customerDetailsBody" class="customer-details-body"></div>
+    </div>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" data-cfasync="false"></script>
-  <script src="app-v2.6.12.js?v=2.6.11" data-cfasync="false"></script>
+  <script src="app-v2.6.12.js?v=2.6.14" data-cfasync="false"></script>
 </body>
 </html>

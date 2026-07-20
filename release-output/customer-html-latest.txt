@@ -1,0 +1,5 @@
+version=3.0.1
+run_id=29749420495
+artifact_id=8463840162
+artifact_name=bubblyfi-customer-html-v3.0.1
+commit=5d3986f11ec364cbfc1117cecc13ec1956cf3c75

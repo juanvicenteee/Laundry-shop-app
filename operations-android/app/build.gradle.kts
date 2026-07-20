@@ -27,7 +27,7 @@ android {
         applicationId = "ph.bubblyfi.operations"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
+        versionCode = 21
         versionName = "2.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

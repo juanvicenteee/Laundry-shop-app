@@ -1,0 +1,42 @@
+name: Build Operations Customer Details Release
+
+on:
+  push:
+    branches: [feature/order-customer-details]
+  pull_request:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Verify customer details feature
+        run: |
+          node --check operations-android/app/src/main/assets/www/app-v2.6.12.js
+          grep -F 'data-customer-order-details' operations-android/app/src/main/assets/www/app-v2.6.12.js
+          grep -F 'extra_handwash_notes' operations-android/app/src/main/assets/www/app-v2.6.12.js
+          grep -F 'customerDetailsDialog' operations-android/app/src/main/assets/www/index.html
+          grep -F 'versionCode = 22' operations-android/app/build.gradle.kts
+          grep -F 'versionName = "2.0.2"' operations-android/app/build.gradle.kts
+      - name: Clean native Operations bundle
+        working-directory: operations-android
+        run: gradle --no-daemon clean bundleRelease
+      - name: Package standalone HTML
+        run: |
+          mkdir -p release
+          cp operations-android/app/build/outputs/bundle/release/app-release.aab release/Bubblyfi-Operations-v2.0.2-code22-unsigned.aab
+          cd operations-android/app/src/main/assets/www
+          zip -r ../../../../../../../release/Bubblyfi-Operations-HTML-v2.6.14.zip .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: operations-customer-details-release
+          path: release/
+          if-no-files-found: error

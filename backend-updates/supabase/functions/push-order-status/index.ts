@@ -1,10 +1,51 @@
 import { corsHeaders, json, requireStaff, serviceClient, sendMany } from '../_shared/common.ts';
 
 type TokenRow = { token: string; source: 'account' | 'booking' };
+type StatusNotice = {
+  key: string;
+  title: string;
+  body: (reference: string) => string;
+  channel: 'order' | 'rider';
+  notificationType: 'order_status' | 'rider';
+};
 
-function isRiderStatus(status: string): boolean {
-  const value = status.toLowerCase();
-  return ['approach', 'nearby', 'near ', 'on the way', 'coming', 'out for delivery', 'rider'].some((marker) => value.includes(marker));
+function normalize(value: unknown): string {
+  return String(value || '').toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function statusNotice(status: string): StatusNotice {
+  const value = normalize(status);
+  if (/delivered|completed|complete|claimed|received by customer/.test(value)) {
+    return { key: 'delivered', title: 'Laundry delivered', body: (reference) => `${reference} has been delivered successfully.`, channel: 'rider', notificationType: 'rider' };
+  }
+  if (/arrived|at (the )?(address|location|lobby|door)|delivery staff.*here|rider.*here/.test(value)) {
+    return { key: 'arrived', title: 'Delivery has arrived', body: (reference) => `The delivery staff has arrived for ${reference}. Please receive your laundry.`, channel: 'rider', notificationType: 'rider' };
+  }
+  if (/ongoing delivery|delivery ongoing|out for delivery|in transit|delivery started|on delivery|en route.*deliver/.test(value)) {
+    return { key: 'ongoing_delivery', title: 'Your laundry is on the way', body: (reference) => `Delivery is ongoing for ${reference}. Please keep your phone available.`, channel: 'rider', notificationType: 'rider' };
+  }
+  if (/ready for delivery|ready.*pickup|ready/.test(value)) {
+    return { key: 'ready', title: 'Laundry is ready', body: (reference) => `${reference} is ready for pickup or delivery.`, channel: 'order', notificationType: 'order_status' };
+  }
+  if (/processing|washing|wash|drying|folding|laundry in progress/.test(value)) {
+    return { key: 'processing', title: 'Laundry is being processed', body: (reference) => `${reference} is currently being washed, dried, or folded.`, channel: 'order', notificationType: 'order_status' };
+  }
+  if (/received at shop|arrived at shop|shop received|laundry received/.test(value)) {
+    return { key: 'at_shop', title: 'Laundry received at Bubbly-fi', body: (reference) => `Bubbly-fi has received ${reference} at the shop.`, channel: 'order', notificationType: 'order_status' };
+  }
+  if (/picked up|collected|pickup complete/.test(value)) {
+    return { key: 'picked_up', title: 'Laundry picked up', body: (reference) => `${reference} has been picked up and is being brought to Bubbly-fi.`, channel: 'rider', notificationType: 'rider' };
+  }
+  if (/approach|nearby|near |on the way|coming|rider assigned|staff assigned|pickup ongoing|for pickup/.test(value)) {
+    return { key: 'rider', title: 'Delivery staff is on the way', body: (reference) => `The delivery staff is on the way for ${reference}. Please keep your phone available.`, channel: 'rider', notificationType: 'rider' };
+  }
+  if (/confirm|accepted|scheduled|received|submitted|pending/.test(value)) {
+    return { key: 'confirmed', title: 'Booking received', body: (reference) => `${reference} is recorded and waiting for the next update.`, channel: 'order', notificationType: 'order_status' };
+  }
+  if (/cancel|reject|failed/.test(value)) {
+    return { key: 'cancelled', title: 'Order cancelled', body: (reference) => `${reference} was cancelled or rejected. Contact Bubbly-fi if you need assistance.`, channel: 'order', notificationType: 'order_status' };
+  }
+  return { key: 'updated', title: 'Bubbly-fi order update', body: (reference) => `${reference} is now: ${status}.`, channel: 'order', notificationType: 'order_status' };
 }
 
 async function customerTokens(db: ReturnType<typeof serviceClient>, userId: string | null, requestId: string | null): Promise<TokenRow[]> {
@@ -57,31 +98,28 @@ Deno.serve(async (req) => {
       customerUserId = customer?.user_id || null;
     }
 
-    const rider = isRiderStatus(status);
-    const reference = request?.request_no || order?.receipt_no || 'your booking';
-    const title = rider ? 'Your delivery staff is on the way' : 'Bubbly-fi order update';
-    const body = rider
-      ? status.toLowerCase().includes('near') || status.toLowerCase().includes('approach')
-        ? `The delivery staff is near your pickup or delivery point for ${reference}. Please be ready.`
-        : `The delivery staff is coming for ${reference}. Please be ready.`
-      : `${reference} is now: ${status}.`;
-
+    const reference = request?.request_no || order?.receipt_no || 'Your booking';
+    const notice = statusNotice(status);
     const tokens = await customerTokens(db, customerUserId, requestId);
-    const dedupeKey = String(input.dedupe_key || `${requestId || order?.id || 'order'}:${status.toLowerCase()}`);
+    const dedupeKey = String(input.dedupe_key || `${requestId || order?.id || 'order'}:${normalize(status)}`);
+    const commonData = {
+      kind: notice.key,
+      notification_type: notice.notificationType,
+      channel: notice.channel,
+      delivery_stage: notice.key,
+      status,
+      order_id: order?.id || '',
+      request_id: requestId || '',
+      request_no: request?.request_no || '',
+      dedupe_key: dedupeKey,
+    };
+
     const messages: any[] = tokens.map((row) => ({
       token: row.token,
-      title,
-      body,
-      channel: rider ? 'rider' as const : 'order' as const,
-      data: {
-        kind: rider ? 'rider_approaching' : 'order_status',
-        notification_type: rider ? 'rider' : 'order_status',
-        status,
-        order_id: order?.id || '',
-        request_id: requestId || '',
-        request_no: request?.request_no || '',
-        dedupe_key: dedupeKey,
-      },
+      title: notice.title,
+      body: notice.body(reference),
+      channel: notice.channel,
+      data: commonData,
     }));
 
     const { data: staffTokens, error: staffError } = await db.from('device_push_tokens').select('token').eq('app_role', 'operations').eq('active', true);
@@ -91,20 +129,28 @@ Deno.serve(async (req) => {
         token: row.token,
         title: 'Order status updated',
         body: `${reference}: ${status}`,
-        channel: rider ? 'rider' as const : 'order' as const,
-        data: {
-          kind: rider ? 'rider_approaching' : 'order_status',
-          notification_type: rider ? 'rider' : 'order_status',
-          status,
-          order_id: order?.id || '',
-          request_id: requestId || '',
-          request_no: request?.request_no || '',
-          dedupe_key: `staff:${dedupeKey}`,
-        },
+        channel: notice.channel,
+        data: { ...commonData, dedupe_key: `staff:${dedupeKey}` },
       });
     }
 
-    await db.from('order_status_events').insert({ order_id: order?.id || null, customer_request_id: requestId, status, changed_by: user.id });
+    const eventResult = await db.from('order_status_events').insert({
+      order_id: order?.id || null,
+      customer_request_id: requestId,
+      status,
+      message: notice.body(reference),
+      changed_by: user.id,
+    });
+    if (eventResult.error && /column.*message|schema cache/i.test(String(eventResult.error.message || eventResult.error))) {
+      const fallback = await db.from('order_status_events').insert({
+        order_id: order?.id || null,
+        customer_request_id: requestId,
+        status,
+        changed_by: user.id,
+      });
+      if (fallback.error) throw fallback.error;
+    } else if (eventResult.error) throw eventResult.error;
+
     const results = await sendMany(messages);
     const invalid = results.filter((result: any) => !result.ok && [404, 410].includes(result.status)).map((result: any) => result.token);
     if (invalid.length) {
@@ -113,7 +159,15 @@ Deno.serve(async (req) => {
         db.from('customer_device_tokens').update({ enabled: false }).in('fcm_token', invalid),
       ]);
     }
-    return json({ ok: true, customer_devices: tokens.length, attempted: messages.length, delivered: results.filter((result: any) => result.ok).length, rider_notification: rider });
+
+    return json({
+      ok: true,
+      delivery_stage: notice.key,
+      customer_devices: tokens.length,
+      attempted: messages.length,
+      delivered: results.filter((result: any) => result.ok).length,
+      rider_notification: notice.channel === 'rider',
+    });
   } catch (error) {
     return json({ error: String((error as any)?.message || error) }, 400);
   }

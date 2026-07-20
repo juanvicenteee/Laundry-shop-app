@@ -11,8 +11,6 @@ on:
       - 'operations-android/app/src/main/assets/www/customer-notification-diagnostics.js'
       - 'operations-android/app/src/main/assets/www/assets/**'
       - '.github/workflows/package-customer-html-v3.yml'
-    paths-ignore:
-      - 'release-output/**'
 
 permissions:
   contents: write

@@ -26,8 +26,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - run: gradle :app:assembleDebug :app:bundleRelease
+      - id: compile
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:assembleDebug :app:bundleRelease --stacktrace 2>&1 | tee ../customer-build.log
       - id: upload
+        if: steps.compile.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: customer-android-builds
@@ -35,20 +41,29 @@ jobs:
             customer-android/app/build/outputs/apk/debug/*.apk
             customer-android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
-      - name: Record downloadable artifact
+      - name: Record build result
+        if: always()
         working-directory: .
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-output
-          cat > release-output/customer-android-latest.txt <<EOF
+          if [ "${{ steps.compile.outcome }}" = success ]; then
+            cat > release-output/customer-android-latest.txt <<EOF
           run_id=${{ github.run_id }}
           artifact_id=${{ steps.upload.outputs.artifact-id }}
           artifact_name=customer-android-builds
           commit=${{ github.sha }}
           EOF
+            rm -f release-output/customer-android-failure.log
+          else
+            tail -n 250 customer-build.log > release-output/customer-android-failure.log
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add release-output/customer-android-latest.txt
-          git commit -m 'Record Customer Android build artifact [skip ci]'
+          git add release-output/customer-android-latest.txt release-output/customer-android-failure.log 2>/dev/null || true
+          git commit -m 'Record Customer Android build result [skip ci]' || true
           git push
+      - name: Enforce successful build
+        if: steps.compile.outcome != 'success'
+        run: exit 1

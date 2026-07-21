@@ -20,15 +20,15 @@ if (hasGoogleServices) {
 }
 
 android {
-    namespace = "ph.bubblyfi.customer"
+    namespace = "com.bubblyfi.laundry"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ph.bubblyfi.customer"
+        applicationId = "com.bubblyfi.laundry"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 1031
+        versionName = "1.6.20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -45,7 +45,7 @@ android {
 
     buildTypes {
         debug {
-            // No applicationIdSuffix: Firebase only has ph.bubblyfi.customer
+            // No applicationIdSuffix: Firebase only has com.bubblyfi.laundry
             // registered, not a ".debug" variant, and the google-services
             // plugin fails the build if it can't find a matching client.
             versionNameSuffix = "-debug"

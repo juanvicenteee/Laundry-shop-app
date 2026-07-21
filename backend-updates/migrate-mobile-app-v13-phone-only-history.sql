@@ -197,6 +197,11 @@ begin
         'delivery_requested', coalesce(request_data.request_json->'delivery_requested', to_jsonb(false)),
         'payment_method', coalesce(order_row.order_json->>'payment_method', request_data.request_json->>'payment_method', request_data.request_json->>'payment_type'),
         'notes', coalesce(order_row.order_json->>'notes', request_data.request_json->>'notes'),
+        'assigned_rider_name', order_row.order_json->>'assigned_rider_name',
+        'assigned_rider_phone', order_row.order_json->>'assigned_rider_phone',
+        'delivery_eta', order_row.order_json->>'delivery_eta',
+        'delivery_proof_type', order_row.order_json->>'delivery_proof_type',
+        'delivery_received_at', order_row.order_json->>'delivery_received_at',
         'history', coalesce(history_row.history, jsonb_build_array(
           jsonb_build_object(
             'status', coalesce(order_row.order_json->>'status', request.status, 'Pending'),

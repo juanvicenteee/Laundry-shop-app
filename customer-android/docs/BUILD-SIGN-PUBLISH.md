@@ -48,7 +48,7 @@ gradle :staffApp:bundleRelease :customerApp:bundleRelease
 Create two Play Console apps with these package names:
 
 - `ph.bubblyfi.operations`
-- `ph.bubblyfi.customer`
+- `com.bubblyfi.laundry`
 
 Upload the matching `.aab` file to each app. Enable Play App Signing and complete the Data safety, privacy-policy, content-rating, and app-access sections.
 

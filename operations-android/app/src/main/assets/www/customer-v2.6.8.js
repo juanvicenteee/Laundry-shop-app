@@ -63,7 +63,7 @@ const defaults = {
   price_fold_only_cubao: 40, price_fold_only_mplace: 70, price_fold_only_outside: 40,
   capacity_wash: 8, capacity_wdo: 8, capacity_wdf: 8,
   capacity_wash_only: 8, capacity_dry_only: 8, capacity_fold_only: 8,
-  addon_extra_dry: 20, addon_extra_wash: 25, addon_warm_hot_wash: 25, addon_zonrox_colorsafe: 5, full_service_discount: 5, default_detergent_price: 10, default_conditioner_price: 15, capacity_regular: 8, capacity_blanket: 2, capacity_comforter: 1, capacity_sheets: 5,
+  addon_extra_dry: 20, addon_extra_wash: 25, addon_warm_hot_wash: 25, addon_handwash: 100, addon_zonrox_colorsafe: 5, full_service_discount: 5, default_detergent_price: 10, default_conditioner_price: 15, capacity_regular: 8, capacity_blanket: 2, capacity_comforter: 1, capacity_sheets: 5,
   delivery_standard: 60, delivery_mplace: 30
 };
 
@@ -128,6 +128,7 @@ function updatePinPosition(lat, lng) {
 function applyDetectedArea(lat, lng, accuracy = 0) {
   const detected = detectServiceArea(Number(lat), Number(lng));
   state.place = detected;
+  try { window.AndroidBridge?.setCustomerArea?.(detected); } catch {}
   $('#place').value = detected;
   $('#areaMode').textContent = `Detected by GPS: ${places[detected]}`;
   renderAll();
@@ -140,13 +141,13 @@ const loadTypes = { assorted_clothes:{label:'Assorted clothes',icon:'👕',unit:
 const state = {
   settings: { ...defaults }, products: [], service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', quantity: 8,
   detergentSource: '', detergentItemId: '', conditionerSource: '', conditionerItemId: '',
-  extraDry: false, extraWash: false, warmHotWash: false, zonroxColorsafe: false, extraDetergent: false, extraConditioner: false, deliveryRequested: true,
+  extraDry: false, extraWash: false, warmHotWash: false, extraHandwash: false, handwashItemCount: 1, handwashItems: '', zonroxColorsafe: false, extraDetergent: false, extraConditioner: false, deliveryRequested: true,
   gpsLat: '', gpsLng: '', mapsUrl: '', submitting: false, lastFcmToken: '', accountPhone: '', referralCode: '', savedAddresses: [], washPrefs: null
 };
 
-function toast(message) {
+function toast(message, duration = 2800) {
   const el = $('#toast'); el.textContent = message; el.classList.add('show');
-  clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 2800);
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), duration);
 }
 
 
@@ -206,6 +207,7 @@ function fullServicePresetPrice(place = state.place) {
 function applyFullServicePreset() {
   state.service = 'wash_dry_fold'; state.fullService = true; state.quantity = loadTypeCapacity();
   state.extraDry=false; state.extraWash=false; state.warmHotWash=false; state.zonroxColorsafe=true; state.extraDetergent=false; state.extraConditioner=false;
+  state.extraHandwash=false; state.handwashItemCount=1; state.handwashItems='';
   state.detergentSource='included'; state.detergentItemId=''; state.conditionerSource='included'; state.conditionerItemId='';
   toast('Full Service selected: detergent + fabric conditioner + Zonrox Color Safe 30 ml, with ₱5 off.');
 }
@@ -232,11 +234,12 @@ function calculate() {
   const extraDryRate = state.extraDry ? settingNumber('addon_extra_dry') : 0;
   const extraWashRate = state.extraWash ? settingNumber('addon_extra_wash') : 0;
   const warmRate = state.warmHotWash && serviceHasWash() ? settingNumber('addon_warm_hot_wash') : 0;
+  const handwashRate = state.extraHandwash ? settingNumber('addon_handwash') : 0;
   const zonroxRate = state.zonroxColorsafe && serviceHasWash() ? settingNumber('addon_zonrox_colorsafe') : 0;
   const extraDetergentRate = state.extraDetergent && serviceHasWash() ? settingNumber('default_detergent_price') : 0;
   const extraConditionerRate = state.extraConditioner && serviceHasWash() ? settingNumber('default_conditioner_price') : 0;
   const base = loads * rate; const detergentTotal = loads * detergent.price; const conditionerTotal = loads * conditioner.price;
-  const addons = loads * (extraDryRate + extraWashRate + warmRate + zonroxRate + extraDetergentRate + extraConditionerRate);
+  const addons = loads * (extraDryRate + extraWashRate + warmRate + handwashRate + zonroxRate + extraDetergentRate + extraConditionerRate);
   const discount = isFullServiceSelection() ? loads * settingNumber('full_service_discount') : 0;
   const delivery = state.deliveryRequested && state.place !== 'outside' ? settingNumber(state.place === 'mplace' ? 'delivery_mplace' : 'delivery_standard') : 0;
   // Coupon/referral discounts are computed server-side by
@@ -284,11 +287,20 @@ function renderProducts() {
 }
 function renderAddons() {
   const washEnabled=serviceHasWash(); if(!washEnabled){state.warmHotWash=false;state.extraDetergent=false;state.extraConditioner=false;} if(isFullServiceSelection())state.zonroxColorsafe=true;
-  const addOns=[['extraDry','💨','Extra dry',settingNumber('addon_extra_dry'),true],['extraWash','🔁','Extra wash',settingNumber('addon_extra_wash'),true],['warmHotWash','♨️','Warm / hot wash',settingNumber('addon_warm_hot_wash'),washEnabled],['extraDetergent','🧴','Additional detergent',settingNumber('default_detergent_price'),washEnabled],['extraConditioner','🌸','Additional fabric conditioner',settingNumber('default_conditioner_price'),washEnabled],['zonroxColorsafe','🧽','Zonrox Color Safe 30 ml',settingNumber('addon_zonrox_colorsafe'),washEnabled&&!isFullServiceSelection()]];
+  const addOns=[['extraDry','💨','Extra dry',settingNumber('addon_extra_dry'),true],['extraWash','🔁','Extra wash',settingNumber('addon_extra_wash'),true],['warmHotWash','♨️','Warm / hot wash',settingNumber('addon_warm_hot_wash'),washEnabled],['extraHandwash','🖐️','Extra handwash (1–5 pieces)',settingNumber('addon_handwash'),true],['extraDetergent','🧴','Additional detergent',settingNumber('default_detergent_price'),washEnabled],['extraConditioner','🌸','Additional fabric conditioner',settingNumber('default_conditioner_price'),washEnabled],['zonroxColorsafe','🧽','Zonrox Color Safe 30 ml',settingNumber('addon_zonrox_colorsafe'),washEnabled&&!isFullServiceSelection()]];
   $('#addonChoices').innerHTML=addOns.map(([key,icon,label,price,enabled])=>{const included=key==='zonroxColorsafe'&&isFullServiceSelection();return `<button type="button" class="choice-card ${(state[key]||included)?'selected':''}" data-addon="${key}" ${(included||!enabled)?'disabled':''}><span class="icon">${icon}</span><strong>${label}</strong><em>${included?'Included':`+${peso.format(price)}/load`}</em></button>`}).join('');
+  const handwash=$('#customerHandwashDetails');if(handwash){handwash.classList.toggle('hidden',!state.extraHandwash);$('#customerHandwashCount').value=String(Math.min(5,Math.max(1,Number(state.handwashItemCount)||1)));$('#customerHandwashItems').value=state.handwashItems||'';}
   const outside=state.place==='outside';const fee=outside?0:settingNumber(state.place==='mplace'?'delivery_mplace':'delivery_standard');
   $('#deliveryChoices').innerHTML=`<button type="button" class="choice-card ${state.deliveryRequested?'selected':''}" data-delivery="true"><span class="icon">🛵</span><strong>${outside?'LalaMove pickup / delivery':'Pickup & delivery'}</strong><em>${outside?'LalaMove rate — not included':`+${peso.format(fee)}`}</em></button><button type="button" class="choice-card ${!state.deliveryRequested?'selected':''}" data-delivery="false"><span class="icon">🏪</span><strong>Self drop-off / pickup</strong><em>+₱0</em></button>`;
   $('#lalamoveReference')?.classList.toggle('hidden',!(outside&&state.deliveryRequested));
+}
+function renderAutoLoadNotice(calc) {
+  const notice=$('#customerAutoLoadNotice');if(!notice)return;
+  if(calc.loads<=1){notice.classList.add('hidden');notice.textContent='';return;}
+  const capacity=currentCapacity(),unit=calc.unit,parts=[];let remaining=Number(state.quantity)||0;
+  while(remaining>0&&parts.length<15){const part=Math.min(capacity,remaining);parts.push(part);remaining=Math.round((remaining-part)*10)/10;}
+  notice.textContent=`${state.quantity} ${unit} is above the ${capacity} ${unit} one-load limit. Your booking is automatically ${calc.loads} loads (${parts.map(value=>`${value} ${unit}`).join(' + ')}). Service, products, temperature, and add-ons apply to every load; pricing is recalculated.`;
+  notice.classList.remove('hidden');
 }
 function renderSummary() {
   const calc=calculate(); $('#quantityValue').textContent=Number(state.quantity).toLocaleString('en-PH');$('#quantityUnit').textContent=calc.unit;
@@ -296,6 +308,7 @@ function renderSummary() {
   $('#summaryQuantity').textContent=`${state.quantity} ${calc.unit} · ${currentLoadType().label}`;$('#summaryLoads').textContent=calc.loads;$('#summaryPlace').textContent=places[state.place];$('#summaryBase').textContent=peso.format(calc.base);
   $('#summaryDetergent').textContent=`${calc.detergent.name} · ${peso.format(calc.detergentTotal)}`;$('#summaryConditioner').textContent=`${calc.conditioner.name} · ${peso.format(calc.conditionerTotal)}`;$('#summaryAddons').textContent=peso.format(calc.addons);
   $('#summaryDelivery').textContent=state.deliveryRequested&&state.place==='outside'?'LalaMove rate (not included)':peso.format(calc.delivery);$('#summaryTotal').textContent=peso.format(calc.total);$('#paymentTotal').textContent=peso.format(calc.total);
+  renderAutoLoadNotice(calc);
 }
 function renderAll() { renderServices(); renderProducts(); renderAddons(); renderSummary(); }
 
@@ -343,6 +356,7 @@ function validateBooking() {
   $('#phone').value = normalizedPhone;
   if (serviceHasWash() && !isFullServiceSelection() && !['inventory','bring_own'].includes(state.detergentSource)) { toast('Select detergent or Bring your own.'); return false; }
   if (serviceHasWash() && !isFullServiceSelection() && !['inventory','bring_own','none'].includes(state.conditionerSource)) { toast('Select fabric conditioner, Bring your own, or None.'); return false; }
+  if (state.extraHandwash && !String(state.handwashItems||'').trim()) { toast('Specify the 1–5 pieces for extra handwash.'); $('#customerHandwashItems')?.focus(); return false; }
   if (!$('#paymentProof').files?.[0]) { toast('Upload the GCash payment screenshot.'); return false; }
   return true;
 }
@@ -564,10 +578,8 @@ async function upsertDevice(fcmToken) {
   const session = data?.session;
   if (!session) return; // guests can't register — no user_id to attach the row to
   try {
-    await sb.from('device_push_tokens').upsert({
-      user_id: session.user.id, token: fcmToken, app_role: 'customer', area: state.place,
-      platform: 'android', active: true, last_seen_at: new Date().toISOString()
-    }, { onConflict: 'token' });
+    const { error } = await sb.functions.invoke('register-device', { body:{ token:fcmToken, app_role:'customer', area:state.place } });
+    if (error) throw error;
   } catch (error) {
     console.warn('Could not register this device for push notifications:', error);
   }
@@ -677,14 +689,14 @@ async function submitBooking(event) {
       detergent_item_id: state.detergentSource === 'inventory' ? state.detergentItemId : '',
       conditioner_source: serviceHasWash() ? state.conditionerSource : 'not_applicable',
       conditioner_item_id: state.conditionerSource === 'inventory' ? state.conditionerItemId : '',
-      extra_dry: state.extraDry, extra_wash: state.extraWash, warm_hot_wash: state.warmHotWash, zonrox_colorsafe: state.zonroxColorsafe, extra_detergent: state.extraDetergent, extra_conditioner: state.extraConditioner,
+      extra_dry: state.extraDry, extra_wash: state.extraWash, warm_hot_wash: state.warmHotWash, extra_handwash:state.extraHandwash, handwash_item_count:state.extraHandwash?Math.min(5,Math.max(1,Number(state.handwashItemCount)||1)):0, handwash_items:state.extraHandwash?String(state.handwashItems||'').trim():'', zonrox_colorsafe: state.zonroxColorsafe, extra_detergent: state.extraDetergent, extra_conditioner: state.extraConditioner,
       delivery_requested: state.deliveryRequested,
       address_line: $('#addressLine').value.trim(), building_unit: $('#buildingUnit').value.trim(), barangay: $('#barangay').value.trim(), city: $('#city').value.trim(), landmark: $('#landmark').value.trim(), full_address: fullAddress(),
       gps_lat: state.gpsLat, gps_lng: state.gpsLng, maps_url: state.mapsUrl, pickup_at: new Date($('#pickupAt').value).toISOString(),
       item_description: $('#itemDescription').value.trim(), item_count: $('#itemCount').value, bags_count: $('#bagsCount').value,
       pickup_photo_path: pickupPhotoPath, item_photo_paths: itemPhotoPaths,
       payment_reference: $('#paymentReference').value.trim(), payment_proof_path: paymentProofPath,
-      customer_notes: $('#customerNotes').value.trim(), quoted_total: calc.total
+      customer_notes: $('#customerNotes').value.trim(), loads:calc.loads, load_count:calc.loads, quoted_total: calc.total
     };
 
     submitStage = 'booking';
@@ -695,6 +707,7 @@ async function submitBooking(event) {
     $('#successRequestNo').textContent = data.request_no;
     $('#successTotal').textContent = peso.format(data.total);
     $('#successCard').classList.remove('hidden');
+    try{localStorage.setItem('bubblyfi_customer_phone_v1',payload.phone);window.AndroidBridge?.registerBookingDetails?.(data.id||'',data.request_no,payload.phone,state.place,JSON.stringify({request_id:data.id||'',request_no:data.request_no,phone:payload.phone,area:state.place,total:data.total,current_status:'Submitted',current_message:'Booking submitted successfully and waiting for shop confirmation.',created_at:new Date().toISOString()}));window.dispatchEvent(new CustomEvent('bubblyfi:booking-captured',{detail:{request_id:data.id||'',request_no:data.request_no,phone:payload.phone,area:state.place,total:data.total}}));}catch{}
     window.scrollTo({ top:0, behavior:'smooth' });
     sendBookingNotifications(data.request_no);
     renderNotifSettings();
@@ -713,7 +726,7 @@ async function submitBooking(event) {
 }
 
 function bindEvents() {
-  $('#place').addEventListener('change', () => { state.place = $('#place').value; $('#areaMode').textContent = 'Selected manually'; renderAll(); });
+  $('#place').addEventListener('change', () => { state.place = $('#place').value; try { window.AndroidBridge?.setCustomerArea?.(state.place); } catch {} $('#areaMode').textContent = 'Selected manually'; renderAll(); });
   $('#serviceChoices').addEventListener('click', event => {
     const fullService = event.target.closest('[data-full-service]');
     if (fullService) { applyFullServicePreset(); renderAll(); return; }
@@ -724,7 +737,15 @@ function bindEvents() {
   });
   $('#itemTypeChoices').addEventListener('click',event=>{const button=event.target.closest('[data-item-type]');if(!button)return;state.itemType=button.dataset.itemType;state.quantity=loadTypeCapacity();renderAll();});
   $$('.quantity-box button').forEach(button => button.addEventListener('click', () => {
-    state.quantity = Math.max(currentLoadType().unit==='pc'?1:.5, Number(state.quantity) + Number(button.dataset.qty)); renderSummary();
+    const previousLoads = calculate().loads;
+    state.quantity = Math.max(currentLoadType().unit==='pc'?1:.5, Number(state.quantity) + Number(button.dataset.qty));
+    renderSummary();
+    const next = calculate();
+    if (next.loads > previousLoads) {
+      const message = `${state.quantity} ${next.unit} is automatically split into ${next.loads} loads because each ${currentLoadType().label.toLowerCase()} load is limited to ${next.capacity} ${next.unit}.`;
+      toast(message, 9000);
+      try { window.alert(message); } catch {}
+    }
   }));
   $('#detergentChoices').addEventListener('click', event => {
     const button = event.target.closest('[data-detergent]'); if (!button) return;
@@ -743,6 +764,8 @@ function bindEvents() {
     const button = event.target.closest('[data-addon]'); if (!button || button.disabled) return;
     state[button.dataset.addon] = !state[button.dataset.addon]; renderAll();
   });
+  $('#customerHandwashCount')?.addEventListener('input', event => { state.handwashItemCount = Math.min(5, Math.max(1, Number(event.target.value)||1)); renderSummary(); });
+  $('#customerHandwashItems')?.addEventListener('input', event => { state.handwashItems = event.target.value; });
   $('#deliveryChoices').addEventListener('click', event => {
     const button = event.target.closest('[data-delivery]'); if (!button) return;
     state.deliveryRequested = button.dataset.delivery === 'true'; renderAll();

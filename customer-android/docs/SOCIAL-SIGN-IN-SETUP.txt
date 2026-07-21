@@ -1,0 +1,29 @@
+BUBBLY-FI CUSTOMER SOCIAL SIGN-IN SETUP
+=======================================
+
+The Customer Android app now uses an explicit OAuth flow and handles both
+successful token redirects and readable provider errors. The following remote
+provider settings are also required; they cannot be embedded in an AAB.
+
+Supabase Dashboard > Authentication > URL Configuration
+- Add redirect URL: com.bubblyfi.laundry://auth-callback
+
+Supabase Dashboard > Authentication > Providers
+- Enable Google and enter the Google web OAuth client ID and secret.
+- Enable Facebook and enter the Facebook app ID and secret.
+
+Google Cloud Console > OAuth web client
+- Authorized redirect URI:
+  https://amjhrejmcnthlrqddznw.supabase.co/auth/v1/callback
+
+Facebook Developers > Facebook Login > Settings
+- Valid OAuth redirect URI:
+  https://amjhrejmcnthlrqddznw.supabase.co/auth/v1/callback
+- Set the app to Live and make the requested email/public_profile permissions
+  available to non-developer accounts.
+
+The Android manifest already accepts:
+com.bubblyfi.laundry://auth-callback
+
+These buttons use Supabase browser OAuth, so an Android Google OAuth client or
+Facebook Android SDK is not required for this implementation.

@@ -3,7 +3,7 @@
 Two separate Android applications built from the current Bubbly-fi web system:
 
 1. **Bubbly-fi Operations** (`ph.bubblyfi.operations`) — Admin and Operator POS/dashboard.
-2. **Bubbly-fi Laundry** (`ph.bubblyfi.customer`) — Public customer booking application.
+2. **Bubbly-fi Laundry** (`com.bubblyfi.laundry`) — Public customer booking application.
 
 Both apps package the web interface locally and connect to the existing Supabase project over HTTPS. They use the Android system photo picker, optional GPS permissions, external-app links for Google Maps/Messenger/LalaMove, and native Philippine-English text-to-speech fallback for staff order alerts.
 

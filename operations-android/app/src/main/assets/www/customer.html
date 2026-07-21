@@ -70,7 +70,7 @@
       </div>
     </section>
 
-    <div id="loadingCard" class="notice-card">Loading current services and prices…</div>
+    <div id="loadingCard" class="notice-card loading-card"><img src="assets/customer-loading-logo.png" alt="Bubbly-fi Laundry Shop"><span>Loading current services and prices…</span></div>
     <div id="errorCard" class="notice-card error hidden"></div>
     <div id="hoursNotice" class="notice-card hidden"></div>
 
@@ -130,6 +130,7 @@
             <div><strong id="quantityValue">8</strong><span id="quantityUnit">kg</span></div>
             <button type="button" data-qty="1">+1</button><button type="button" data-qty="5">+5</button>
           </div>
+          <div id="customerAutoLoadNotice" class="auto-load-notice hidden" role="alert" aria-live="assertive"></div>
           <div class="weight-verification-notice" role="note" aria-label="Weight Verification Notice">
             <strong>Weight Verification Notice</strong>
             <p>The weight entered during booking is an estimate only. The final billable weight will be based on the measurement recorded using Bubbly-fi Laundry Shop’s weighing scale upon receipt of the items. Any resulting price adjustment will be communicated to the customer before processing.</p>
@@ -151,6 +152,14 @@
         <section class="step-card">
           <div class="step-head"><span>5</span><div><h2>Add-ons and delivery</h2><p>Optional services are charged per load.</p></div></div>
           <div id="addonChoices" class="choice-grid addons"></div>
+          <div id="customerHandwashDetails" class="customer-handwash-box hidden" role="group" aria-label="Extra handwash details">
+            <strong>🖐 Extra handwash items</strong>
+            <p>List the exact pieces so the laundry staff can identify and handwash them separately.</p>
+            <div class="field-grid two">
+              <label>Number of pieces (1–5)<input id="customerHandwashCount" type="number" min="1" max="5" step="1" value="1"></label>
+              <label>Items to handwash<textarea id="customerHandwashItems" rows="3" placeholder="Example: 2 delicate blouses, 1 embroidered shirt"></textarea></label>
+            </div>
+          </div>
           <div id="deliveryChoices" class="choice-grid delivery"></div>
           <div id="lalamoveReference" class="lalamove-reference hidden">
             <div>
@@ -266,8 +275,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="customer-v2.6.8.js?v=2.6.8"></script>
-  <script src="customer-notification-diagnostics.js?v=1.0.0" data-cfasync="false"></script>
-  <script src="customer-auth-fix.js?v=1.0.0" data-cfasync="false"></script>
+  <script src="customer-v2.6.8.js?v=2.6.15"></script>
+  <script src="customer-order-status.js?v=1.6.20" data-cfasync="false"></script>
 </body>
 </html>

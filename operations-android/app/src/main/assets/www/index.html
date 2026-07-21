@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0d7f9e">
-  <title>Bubbly-fi POS v2.6.12</title>
+  <title>Bubbly-fi POS v2.6.16</title>
   <link rel="icon" href="assets/logo.png">
   <link rel="stylesheet" href="style.css?v=2.6.11">
 </head>
@@ -37,7 +37,7 @@
     <aside class="sidebar">
       <div class="brand">
         <img src="assets/logo.png" alt="Bubbly-fi">
-        <div><strong>Bubbly-fi</strong><span>Cloud POS v2.6.12</span></div>
+        <div><strong>Bubbly-fi</strong><span>Cloud POS v2.6.16</span></div>
       </div>
       <nav id="nav" class="nav">
         <button data-page="dashboard" class="active">📊 Dashboard</button>
@@ -109,6 +109,11 @@
             <article class="panel">
               <div class="step-title"><span>4</span><div><h2>Service options</h2><p>Add extra cycles or warm/hot wash</p></div></div>
               <div id="addonChoices" class="choice-grid three addon-grid"></div>
+              <div id="staffHandwashDetails" class="handwash-staff-box hidden">
+                <strong>🖐 Extra handwash details</strong>
+                <label>Number of pieces (1–5)<input id="staffHandwashCount" type="number" min="1" max="5" step="1" value="1"></label>
+                <label>Items / instructions<textarea id="staffHandwashItems" rows="2" placeholder="Example: 2 white socks and 1 delicate blouse"></textarea></label>
+              </div>
             </article>
 
             <article class="panel" id="washProductsPanel">
@@ -127,7 +132,7 @@
               <div class="step-title"><span>6</span><div><h2>Quantity and payment</h2><p>Minimal taps</p></div></div>
               <div class="quantity-box"><button data-qty="-5">−5</button><button data-qty="-1">−1</button><div><strong id="qtyValue">8</strong><span id="qtyUnit">kg</span></div><button data-qty="1">+1</button><button data-qty="5">+5</button></div>
               <div id="paymentChoices" class="choice-grid payments top-gap"></div>
-              <div class="two-fields top-gap"><label>Status<select id="orderStatus"><option>Received</option><option>Washing</option><option>Drying</option><option>Ready</option><option>Claimed</option></select></label><label>Pickup date & time<input id="pickupAt" type="datetime-local"></label></div>
+              <div class="two-fields top-gap"><label>Status<select id="orderStatus"><option>Received</option><option>Washing</option><option>Drying</option><option>Ready</option><option>Ready for delivery</option><option>Ongoing delivery</option><option>Rider already nearby</option><option>Delivered</option><option>Claimed</option></select></label><label>Pickup date & time<input id="pickupAt" type="datetime-local"></label></div>
               <label class="top-gap">Notes<input id="orderNotes" placeholder="Special instructions"></label>
             </article>
           </div>
@@ -156,8 +161,8 @@
 
       <section id="page-orders" class="page">
         <article class="panel">
-          <div class="panel-head actions-head"><div><h2>Orders</h2><span>Cloud-synchronized</span></div><div class="filters"><input id="orderSearch" placeholder="Search customer, receipt, status"><select id="orderStatusFilter"><option value="all">All statuses</option><option>Received</option><option>Washing</option><option>Drying</option><option>Ready</option><option>Claimed</option></select></div></div>
-          <div class="table-wrap"><table><thead><tr><th>Date & time</th><th>Receipt</th><th>Customer</th><th>Service</th><th>Place</th><th>Options</th><th>Wash products</th><th>Status</th><th>Payment</th><th>Total</th><th></th></tr></thead><tbody id="ordersBody"></tbody></table></div>
+          <div class="panel-head actions-head"><div><h2>Orders</h2><span>Cloud-synchronized</span></div><div class="filters"><input id="orderSearch" placeholder="Search customer, receipt, status"><select id="orderStatusFilter"><option value="all">All statuses</option><option>Received</option><option>Washing</option><option>Drying</option><option>Ready</option><option>Ready for delivery</option><option>Ongoing delivery</option><option>Rider already nearby</option><option>Delivered</option><option>Claimed</option></select></div></div>
+          <div class="table-wrap"><table class="orders-table"><thead><tr><th>Date & time</th><th>Receipt</th><th>Customer</th><th>Service</th><th>Place</th><th>Options</th><th>Wash products</th><th>Status</th><th>Payment</th><th>Total</th><th></th></tr></thead><tbody id="ordersBody"></tbody></table></div>
         </article>
       </section>
 
@@ -230,6 +235,7 @@
             <label>Extra dry per load<input id="addonExtraDry" type="number" min="0"></label>
             <label>Extra wash per load<input id="addonExtraWash" type="number" min="0"></label>
             <label>Warm / hot wash per load<input id="addonWarmHotWash" type="number" min="0"></label>
+            <label>Extra handwash per load<input id="addonHandwash" type="number" min="0"></label>
             <label>Zonrox Color Safe 30 ml per load<input id="addonZonroxColorsafe" type="number" min="0" step="0.01"></label>
 
             <div class="settings-group-title">Default wash-product prices</div>
@@ -311,8 +317,39 @@
 
   <dialog id="confirmDialog"><form method="dialog"><h3 id="confirmTitle">Confirm</h3><p id="confirmText"></p><div class="dialog-actions"><button value="cancel" class="btn ghost">Cancel</button><button value="confirm" class="btn danger">Confirm</button></div></form></dialog>
 
+  <dialog id="customerDetailsDialog" class="customer-details-dialog">
+    <div class="customer-details-shell">
+      <div class="customer-details-heading">
+        <div><span class="eyebrow">Customer submission</span><h2 id="customerDetailsTitle">Order details</h2></div>
+        <button id="closeCustomerDetailsBtn" class="popup-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="customerDetailsBody" class="customer-details-body"></div>
+    </div>
+  </dialog>
+
+  <dialog id="deliveryWorkflowDialog" class="customer-details-dialog delivery-workflow-dialog">
+    <form id="deliveryWorkflowForm" class="customer-details-shell">
+      <input id="deliveryWorkflowOrderId" type="hidden">
+      <div class="customer-details-heading">
+        <div><span class="eyebrow">Delivery workflow</span><h2 id="deliveryWorkflowTitle">Delivery details</h2></div>
+        <button id="closeDeliveryWorkflowBtn" class="popup-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div class="delivery-workflow-grid">
+        <label>Assigned rider<input id="deliveryRiderName" maxlength="120" placeholder="Rider name"></label>
+        <label>Rider phone<input id="deliveryRiderPhone" inputmode="tel" maxlength="40" placeholder="09XX XXX XXXX"></label>
+        <label>Delivery ETA<input id="deliveryEta" type="datetime-local"></label>
+        <label>Proof type<select id="deliveryProofType"><option value="">Not recorded</option><option>OTP</option><option>Photo</option><option>Signature</option></select></label>
+        <label>OTP / signature reference<input id="deliveryProofReference" maxlength="160" placeholder="OTP or reference"></label>
+        <label>Proof photo<input id="deliveryProofFile" type="file" accept="image/*"></label>
+      </div>
+      <label class="check-line delivery-received-check"><input id="deliveryReceived" type="checkbox"><span>Customer received the order</span></label>
+      <div id="deliveryNotificationState" class="delivery-notification-state"></div>
+      <section class="customer-detail-card"><h3>Status history / audit trail</h3><div id="deliveryStatusHistory" class="delivery-status-history"></div></section>
+      <div class="dialog-actions delivery-dialog-actions"><button id="retryStatusNotificationBtn" type="button" class="btn secondary">Retry notification</button><button type="submit" class="btn primary">Save delivery details</button></div>
+    </form>
+  </dialog>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" data-cfasync="false"></script>
-  <script src="app-v2.6.12.js?v=2.6.11" data-cfasync="false"></script>
-  <script src="delivery-status-fix.js?v=1.0.0" data-cfasync="false"></script>
+  <script src="app-v2.6.12.js?v=2.6.15" data-cfasync="false"></script>
 </body>
 </html>

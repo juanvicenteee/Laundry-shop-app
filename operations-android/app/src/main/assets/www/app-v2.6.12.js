@@ -1,5 +1,5 @@
 'use strict';
-// Bubbly-fi Operations v2.6.13 — automatic capacity-based load splitting
+// Bubbly-fi Operations v2.6.16 — complete delivery workflow
 
 const SUPABASE_URL = 'https://amjhrejmcnthlrqddznw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5KkgIxPlTNAZjqgRX9Yh3A_tqLD2hNE';
@@ -12,6 +12,9 @@ const $$ = (s) => [...document.querySelectorAll(s)];
 const peso = new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 });
 const usernameEmail = { admin: 'admin@bubblyfi.app', operator: 'operator@bubblyfi.app' };
 const weekdayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+const orderStatuses = ['Received','Washing','Drying','Ready','Ready for delivery','Ongoing delivery','Rider already nearby','Delivered','Claimed'];
+const statusRank = new Map(orderStatuses.map((status, index) => [status, index]));
+const deliveryStatuses = new Set(['Ready for delivery','Ongoing delivery','Rider already nearby','Delivered','Claimed']);
 
 const defaultSettings = {
   // Base service prices exclude detergent and fabric conditioner.
@@ -21,7 +24,7 @@ const defaultSettings = {
   price_wash_only_cubao: 60, price_wash_only_mplace: 90, price_wash_only_outside: 60,
   price_dry_only_cubao: 65, price_dry_only_mplace: 95, price_dry_only_outside: 65,
   price_fold_only_cubao: 40, price_fold_only_mplace: 70, price_fold_only_outside: 40,
-  addon_extra_dry: 20, addon_extra_wash: 25, addon_warm_hot_wash: 25, addon_zonrox_colorsafe: 5, full_service_discount: 5,
+  addon_extra_dry: 20, addon_extra_wash: 25, addon_warm_hot_wash: 25, addon_handwash: 100, addon_zonrox_colorsafe: 5, full_service_discount: 5,
   default_detergent_price: 10, default_conditioner_price: 15,
   delivery_standard: 60, delivery_mplace: 30,
   capacity_wash: 8, capacity_wdo: 8, capacity_wdf: 8,
@@ -85,7 +88,7 @@ const payments = ['Cash','GCash','Maya','Bank Transfer','Unpaid'];
 let state = {
   session: null, profile: null, settings: { ...defaultSettings },
   customers: [], orders: [], inventory: [], requests: [], serviceAreas: [], page: 'dashboard',
-  draft: { customerId: null, service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', delivery: false, quantity: 8, payment: 'Cash', detergentChoice: '', conditionerChoice: '', extraDry: false, extraWash: false, warmHotWash: false, zonroxColorsafe: false, extraDetergent: false, extraConditioner: false },
+  draft: { customerId: null, service: 'wash_dry_fold', itemType: 'assorted_clothes', fullService: false, place: 'cubao', delivery: false, quantity: 8, payment: 'Cash', detergentChoice: '', conditionerChoice: '', extraDry: false, extraWash: false, warmHotWash: false, extraHandwash: false, handwashItemCount: 1, handwashItems: '', zonroxColorsafe: false, extraDetergent: false, extraConditioner: false },
   channels: [], notifiedRequestIds: new Set(), latestRequestId: null, soundVoiceEnabled: false
 };
 
@@ -253,7 +256,7 @@ function renderRequestNotifications() {
   if (alertBadge) alertBadge.textContent = count > 99 ? '99+' : String(count);
   if (navButton) navButton.classList.toggle('has-alert', count > 0);
   if (alertButton) alertButton.classList.toggle('has-alert', count > 0);
-  document.title = count ? `(${count}) Bubbly-fi POS` : 'Bubbly-fi POS v2.6.12';
+  document.title = count ? `(${count}) Bubbly-fi POS` : 'Bubbly-fi POS v2.6.16';
   const list = $('#newRequestList');
   if (list) {
     list.innerHTML = pending.length ? pending.slice(0,6).map(r => `<div class="rank-row"><div><button type="button" data-dashboard-request="${r.id}">${escapeHtml(r.customer_name || 'Customer')} · ${escapeHtml(r.request_no || 'New request')}</button><small>${formatDateTime(r.created_at)} · ${escapeHtml(r.phone || '')}</small></div><strong>${peso.format(Number(r.total || 0))}</strong></div>`).join('') : '<div class="empty">No new customer requests.</div>';
@@ -324,6 +327,83 @@ async function notifyRiderApproaching(orderId, buttonEl) {
     toast(`Could not read GPS: ${error.message}`);
     if (buttonEl) buttonEl.disabled = false;
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+}
+
+function nextOrderStatus(order) {
+  const index = statusRank.get(order?.status);
+  return Number.isInteger(index) && index < orderStatuses.length - 1 ? orderStatuses[index + 1] : '';
+}
+function localDateTimeValue(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0,16);
+}
+async function loadDeliveryStatusHistory(orderId) {
+  const target = $('#deliveryStatusHistory');
+  target.innerHTML = '<span class="small">Loading history…</span>';
+  const { data, error } = await sb.from('customer_status_history').select('status,message,created_at').eq('order_id',orderId).order('created_at',{ascending:false}).limit(80);
+  if (error) { target.innerHTML = `<span class="small">History is unavailable until the delivery workflow migration is deployed.</span>`; return; }
+  target.innerHTML = data?.length ? data.map(row=>`<div class="delivery-history-row"><time>${escapeHtml(formatDateTime(row.created_at))}</time><div><strong>${escapeHtml(row.status||'Updated')}</strong><span>${escapeHtml(row.message||'')}</span></div></div>`).join('') : '<span class="small">No status changes recorded yet.</span>';
+}
+async function openDeliveryWorkflow(orderId) {
+  const order = state.orders.find(row=>row.id===orderId);
+  if (!order) return toast('Order was not found.');
+  $('#deliveryWorkflowOrderId').value=order.id;
+  $('#deliveryWorkflowTitle').textContent=`${order.receipt_no||'Order'} · Delivery`;
+  $('#deliveryRiderName').value=order.assigned_rider_name||'';
+  $('#deliveryRiderPhone').value=order.assigned_rider_phone||'';
+  $('#deliveryEta').value=localDateTimeValue(order.delivery_eta);
+  $('#deliveryProofType').value=order.delivery_proof_type||'';
+  $('#deliveryProofReference').value=order.delivery_proof_reference||'';
+  $('#deliveryProofFile').value='';
+  $('#deliveryReceived').checked=Boolean(order.delivery_received_at);
+  const notice=$('#deliveryNotificationState');
+  const failed=String(order.last_notification_error||'').trim();
+  notice.className=`delivery-notification-state${failed?' error':''}`;
+  notice.innerHTML=failed?`<strong>Notification failed.</strong> ${escapeHtml(failed)}${order.last_notification_at?`<br><small>${escapeHtml(formatDateTime(order.last_notification_at))}</small>`:''}`:`<strong>Notification status:</strong> ${order.last_notification_status?escapeHtml(order.last_notification_status):'No delivery notification recorded yet.'}`;
+  $('#retryStatusNotificationBtn').disabled=!order.status;
+  $('#deliveryWorkflowDialog').showModal();
+  await loadDeliveryStatusHistory(order.id);
+}
+async function uploadDeliveryProof(orderId,file) {
+  if (!file) return '';
+  if (!String(file.type||'').startsWith('image/')) throw new Error('Delivery proof must be an image.');
+  if (file.size > 8*1024*1024) throw new Error('Delivery proof photo must be 8 MB or smaller.');
+  const extension=(file.name.split('.').pop()||'jpg').replace(/[^a-z0-9]/gi,'').slice(0,8)||'jpg';
+  const path=`delivery-proofs/${orderId}/${Date.now()}.${extension}`;
+  const { error }=await sb.storage.from('customer-order-uploads').upload(path,file,{contentType:file.type,upsert:false});
+  if(error)throw error;
+  return path;
+}
+async function saveDeliveryWorkflow(event) {
+  event.preventDefault();
+  const orderId=$('#deliveryWorkflowOrderId').value;
+  const order=state.orders.find(row=>row.id===orderId);
+  if(!order)return;
+  const received=$('#deliveryReceived').checked;
+  const proofType=$('#deliveryProofType').value;
+  if(received&&!proofType)return toast('Choose OTP, Photo, or Signature before confirming receipt.');
+  setSaveStatus('Saving delivery details…','saving');
+  try{
+    const uploadedPath=await uploadDeliveryProof(orderId,$('#deliveryProofFile').files?.[0]);
+    const patch={assigned_rider_name:$('#deliveryRiderName').value.trim()||null,assigned_rider_phone:$('#deliveryRiderPhone').value.trim()||null,delivery_eta:$('#deliveryEta').value?new Date($('#deliveryEta').value).toISOString():null,delivery_proof_type:proofType||null,delivery_proof_reference:$('#deliveryProofReference').value.trim()||null,delivery_received_at:received?(order.delivery_received_at||new Date().toISOString()):null};
+    if(uploadedPath)patch.delivery_proof_path=uploadedPath;
+    const{error}=await sb.from('orders').update({...patch,updated_by:state.profile.id}).eq('id',orderId);
+    if(error)throw error;
+    await logAction('delivery_workflow_updated','order',orderId,{...patch,delivery_proof_path:uploadedPath?'uploaded':undefined});
+    $('#deliveryWorkflowDialog').close();setSaveStatus('Saved in cloud');toast('Delivery details saved.');await loadCloudData();renderAll();
+  }catch(error){setSaveStatus('Save failed','error');toast(error.message||'Could not save delivery details.');}
+}
+async function retryOrderNotification(orderId,buttonEl) {
+  const order=state.orders.find(row=>row.id===orderId);
+  if(!order?.status)return;
+  if(buttonEl)buttonEl.disabled=true;
+  const{error}=await sb.functions.invoke('push-order-status',{body:{order_id:order.id,status:order.status,force_retry:true}});
+  if(error)toast(`Notification retry failed: ${error.message}`);else toast('Customer notification sent again.');
+  if(buttonEl)buttonEl.disabled=false;
+  await loadCloudData();renderAll();
 }
 // Sends via the real send-marketing-push Edge Function (staff-authenticated,
 // already deployed) rather than a duplicate RPC — it handles the
@@ -544,10 +624,11 @@ function calculateDraft() {
   const extraDryRate = state.draft.extraDry ? Number(state.settings.addon_extra_dry) || 0 : 0;
   const extraWashRate = state.draft.extraWash ? Number(state.settings.addon_extra_wash) || 0 : 0;
   const warmHotRate = state.draft.warmHotWash && hasWash ? Number(state.settings.addon_warm_hot_wash) || 0 : 0;
+  const handwashRate = state.draft.extraHandwash ? Number(state.settings.addon_handwash) || 0 : 0;
   const zonroxRate = state.draft.zonroxColorsafe && hasWash ? Number(state.settings.addon_zonrox_colorsafe) || 0 : 0;
   const extraDetergentRate = state.draft.extraDetergent && hasWash ? defaultWashProductPrice('detergent') : 0;
   const extraConditionerRate = state.draft.extraConditioner && hasWash ? defaultWashProductPrice('conditioner') : 0;
-  const addonPerLoad = extraDryRate + extraWashRate + warmHotRate + zonroxRate + extraDetergentRate + extraConditionerRate;
+  const addonPerLoad = extraDryRate + extraWashRate + warmHotRate + handwashRate + zonroxRate + extraDetergentRate + extraConditionerRate;
   const baseSubtotal = loads * rate;
   const addonTotal = loads * addonPerLoad;
   const detergent = hasWash ? selectedWashProduct('detergent') : null;
@@ -564,7 +645,7 @@ function calculateDraft() {
     : 0;
   return {
     service, place, itemType, capacity, loads, rate, hasWash,
-    extraDryRate, extraWashRate, warmHotRate, zonroxRate, extraDetergentRate, extraConditionerRate,
+    extraDryRate, extraWashRate, warmHotRate, handwashRate, zonroxRate, extraDetergentRate, extraConditionerRate,
     addonPerLoad, addonTotal, baseSubtotal, detergent, conditioner, detergentPricePerLoad,
     conditionerPricePerLoad, detergentTotal, conditionerTotal, washProductTotal,
     fullServiceDiscount, subtotal, delivery, total: subtotal + delivery, unit: itemType.unit
@@ -575,6 +656,7 @@ function orderAddonLabels(order) {
   if (order.full_service) labels.push('Full Service');
   if (order.extra_dry) labels.push('Extra dry');
   if (order.extra_wash) labels.push('Extra wash');
+  if (order.extra_handwash || order.handwash_items) labels.push(`🖐 Extra handwash${Number(order.handwash_item_count)>0?` (${Number(order.handwash_item_count)} item${Number(order.handwash_item_count)===1?'':'s'})`:''}`);
   if (order.warm_hot_wash) labels.push('Warm / hot wash');
   if (order.zonrox_colorsafe) labels.push('Zonrox Color Safe 30 ml');
   if (order.extra_detergent) labels.push('Additional detergent');
@@ -755,7 +837,7 @@ function renderDashboard() {
   renderRank('#salesByService', byService, peso.format.bind(peso));
   const byDay = groupSum(monthOrders.filter(o=>o.payment_status==='Paid'), o=>new Intl.DateTimeFormat('en-US',{weekday:'long',timeZone:'Asia/Manila'}).format(new Date(o.created_at)), o=>Number(o.total));
   renderBars('#salesByWeekday', weekdayOrder.map(d=>[d,byDay[d]||0]));
-  const attention = activeOrders.filter(o=>o.status==='Ready'||o.payment_status!=='Paid').slice(0,8);
+  const attention = activeOrders.filter(o=>['Ready','Ready for delivery','Ongoing delivery','Rider already nearby'].includes(o.status)||o.payment_status!=='Paid').slice(0,8);
   $('#attentionList').innerHTML = attention.length ? attention.map(o=>`<div class="rank-row"><div><strong>${escapeHtml(o.customers?.name||'Walk-in')}</strong><small>${escapeHtml(o.status)} · ${escapeHtml(o.payment_status)}</small></div><strong>${peso.format(o.total)}</strong></div>`).join('') : '<div class="empty">No urgent orders.</div>';
   renderRequestNotifications();
 }
@@ -784,11 +866,14 @@ function renderPosChoices() {
     { key:'extraDry', icon:'💨', label:'Extra dry', description:'Additional drying cycle', price:Number(state.settings.addon_extra_dry)||0, enabled:true },
     { key:'extraWash', icon:'🔁', label:'Extra wash', description:'Additional washing cycle', price:Number(state.settings.addon_extra_wash)||0, enabled:true },
     { key:'warmHotWash', icon:'♨️', label:'Warm / hot wash', description:washAvailable?'Use warm or hot water':'Select a wash service or Extra wash first', price:Number(state.settings.addon_warm_hot_wash)||0, enabled:washAvailable },
+    { key:'extraHandwash', icon:'🖐️', label:'Extra handwash', description:'Handwash 1–5 specified pieces', price:Number(state.settings.addon_handwash)||0, enabled:true },
     { key:'extraDetergent', icon:'🧴', label:'Additional detergent', description:'Add another detergent dose', price:defaultWashProductPrice('detergent'), enabled:washAvailable },
     { key:'extraConditioner', icon:'🌸', label:'Additional fabric conditioner', description:'Add another conditioner dose', price:defaultWashProductPrice('conditioner'), enabled:washAvailable },
     { key:'zonroxColorsafe', icon:'🧽', label:'Zonrox Color Safe 30 ml', description:isFullServiceDraft()?'Included in Full Service':'Color-safe bleach treatment', price:Number(state.settings.addon_zonrox_colorsafe)||0, enabled:washAvailable && !isFullServiceDraft(), included:isFullServiceDraft() }
   ];
   $('#addonChoices').innerHTML = addOns.map(a=>`<button class="choice-card addon-card ${(state.draft[a.key]||a.included)?'selected':''} ${!a.enabled&&!a.included?'disabled-choice':''}" data-addon="${a.key}" ${(a.included||!a.enabled)?'disabled':''}><span class="icon">${a.icon}</span><strong>${a.label}</strong><span>${a.description}</span><em>${a.included?'Included':`+${peso.format(a.price)}/load`}</em></button>`).join('');
+  const handwashBox=$('#staffHandwashDetails');
+  if(handwashBox){handwashBox.classList.toggle('hidden',!state.draft.extraHandwash);$('#staffHandwashCount').value=String(Math.min(5,Math.max(1,Number(state.draft.handwashItemCount)||1)));$('#staffHandwashItems').value=state.draft.handwashItems||'';}
   $('#washProductsPanel').classList.toggle('hidden', !washAvailable || isFullServiceDraft());
   const detergents = activeInventoryByCategory('Detergent');
   const conditioners = activeInventoryByCategory('Fabric conditioner');
@@ -812,7 +897,7 @@ function renderSummary() {
   $('#summaryQty').textContent = `${state.draft.quantity} ${calc.unit} · ${calc.itemType.label}`; $('#summaryLoads').textContent=calc.loads;
   const detergent = selectedWashProduct('detergent');
   const conditioner = selectedWashProduct('conditioner');
-  const addonLabels = [state.draft.extraDry?'Extra dry':null,state.draft.extraWash?'Extra wash':null,state.draft.warmHotWash&&calc.hasWash?'Warm / hot wash':null,state.draft.zonroxColorsafe&&calc.hasWash?'Zonrox Color Safe 30 ml':null,state.draft.extraDetergent&&calc.hasWash?'Additional detergent':null,state.draft.extraConditioner&&calc.hasWash?'Additional fabric conditioner':null].filter(Boolean);
+  const addonLabels = [state.draft.extraDry?'Extra dry':null,state.draft.extraWash?'Extra wash':null,state.draft.warmHotWash&&calc.hasWash?'Warm / hot wash':null,state.draft.extraHandwash?`Extra handwash (${Math.min(5,Math.max(1,Number(state.draft.handwashItemCount)||1))} items: ${state.draft.handwashItems||'not specified'})`:null,state.draft.zonroxColorsafe&&calc.hasWash?'Zonrox Color Safe 30 ml':null,state.draft.extraDetergent&&calc.hasWash?'Additional detergent':null,state.draft.extraConditioner&&calc.hasWash?'Additional fabric conditioner':null].filter(Boolean);
   $('#summaryPlace').textContent=calc.place.label; $('#summaryRate').textContent=peso.format(calc.rate);
   $('#summaryAddons').textContent=addonLabels.length?`${addonLabels.join(', ')} · ${peso.format(calc.addonTotal)}`:peso.format(0);
   $('#summaryDelivery').textContent=state.draft.delivery&&state.draft.place==='outside'?'LalaMove rate (not included)':peso.format(calc.delivery);
@@ -825,7 +910,7 @@ function renderSummary() {
   renderAutoLoadNotice(calc);
 }
 function resetDraft() {
-  const walkin=state.customers.find(c=>c.name==='Walk-in Customer'&&!c.is_archived); state.draft={customerId:walkin?.id||state.customers[0]?.id||null,service:'wash_dry_fold',itemType:'assorted_clothes',fullService:false,place:'cubao',delivery:false,quantity:loadTypeCapacity('assorted_clothes'),payment:'Cash',detergentChoice:'',conditionerChoice:'',extraDry:false,extraWash:false,warmHotWash:false,zonroxColorsafe:false,extraDetergent:false,extraConditioner:false};
+  const walkin=state.customers.find(c=>c.name==='Walk-in Customer'&&!c.is_archived); state.draft={customerId:walkin?.id||state.customers[0]?.id||null,service:'wash_dry_fold',itemType:'assorted_clothes',fullService:false,place:'cubao',delivery:false,quantity:loadTypeCapacity('assorted_clothes'),payment:'Cash',detergentChoice:'',conditionerChoice:'',extraDry:false,extraWash:false,warmHotWash:false,extraHandwash:false,handwashItemCount:1,handwashItems:'',zonroxColorsafe:false,extraDetergent:false,extraConditioner:false};
   $('#orderStatus').value='Received'; $('#pickupAt').value=''; $('#orderNotes').value=''; renderPosChoices();
 }
 async function saveOrder() {
@@ -835,12 +920,13 @@ async function saveOrder() {
   const conditioner=calc.hasWash?selectedWashProduct('conditioner'):null;
   if(calc.hasWash&&!isFullServiceDraft()&&!detergent){toast('Select the detergent used for this wash order.');return;}
   if(calc.hasWash&&!isFullServiceDraft()&&!conditioner){toast('Select the fabric conditioner used, or choose No conditioner.');return;}
+  if(state.draft.extraHandwash&&!String(state.draft.handwashItems||'').trim()){toast('Specify the pieces for extra handwash.');$('#staffHandwashItems')?.focus();return;}
   setSaveStatus('Saving order…','saving'); $('#saveOrderBtn').disabled=true;
-  const payload={customer_id:customer.id,service_type:state.draft.service,item_type:state.draft.itemType,full_service:isFullServiceDraft(),quantity:Number(state.draft.quantity),unit:calc.unit,loads:calc.loads,place:state.draft.place,rate_per_load:calc.rate,delivery_type:state.draft.delivery?'two_way':'self_pickup',delivery_fee:calc.delivery,detergent_item_id:detergent?.id||null,detergent_name:detergent?.name||null,detergent_source:detergent?.source||null,detergent_price_per_load:calc.hasWash?calc.detergentPricePerLoad:0,conditioner_item_id:conditioner?.id||null,conditioner_name:conditioner?.name||null,conditioner_source:conditioner?.source||null,conditioner_price_per_load:calc.hasWash?calc.conditionerPricePerLoad:0,wash_product_adjustment:calc.washProductTotal,wash_product_total:calc.washProductTotal,extra_dry:Boolean(state.draft.extraDry),extra_wash:Boolean(state.draft.extraWash),warm_hot_wash:Boolean(state.draft.warmHotWash&&calc.hasWash),zonrox_colorsafe:Boolean(state.draft.zonroxColorsafe&&calc.hasWash),extra_detergent:Boolean(state.draft.extraDetergent&&calc.hasWash),extra_conditioner:Boolean(state.draft.extraConditioner&&calc.hasWash),full_service_discount_total:calc.fullServiceDiscount,addon_total:calc.addonTotal,status:$('#orderStatus').value,payment_method:state.draft.payment==='Unpaid'?null:state.draft.payment,payment_status:state.draft.payment==='Unpaid'?'Unpaid':'Paid',pickup_at:$('#pickupAt').value?new Date($('#pickupAt').value).toISOString():null,notes:$('#orderNotes').value.trim(),subtotal:calc.subtotal,total:calc.total,created_by:state.profile.id};
+  const payload={customer_id:customer.id,service_type:state.draft.service,item_type:state.draft.itemType,full_service:isFullServiceDraft(),quantity:Number(state.draft.quantity),unit:calc.unit,loads:calc.loads,place:state.draft.place,rate_per_load:calc.rate,delivery_type:state.draft.delivery?'two_way':'self_pickup',delivery_fee:calc.delivery,detergent_item_id:detergent?.id||null,detergent_name:detergent?.name||null,detergent_source:detergent?.source||null,detergent_price_per_load:calc.hasWash?calc.detergentPricePerLoad:0,conditioner_item_id:conditioner?.id||null,conditioner_name:conditioner?.name||null,conditioner_source:conditioner?.source||null,conditioner_price_per_load:calc.hasWash?calc.conditionerPricePerLoad:0,wash_product_adjustment:calc.washProductTotal,wash_product_total:calc.washProductTotal,extra_dry:Boolean(state.draft.extraDry),extra_wash:Boolean(state.draft.extraWash),warm_hot_wash:Boolean(state.draft.warmHotWash&&calc.hasWash),extra_handwash:Boolean(state.draft.extraHandwash),handwash_item_count:state.draft.extraHandwash?Math.min(5,Math.max(1,Number(state.draft.handwashItemCount)||1)):0,handwash_items:state.draft.extraHandwash?String(state.draft.handwashItems||'').trim():'',zonrox_colorsafe:Boolean(state.draft.zonroxColorsafe&&calc.hasWash),extra_detergent:Boolean(state.draft.extraDetergent&&calc.hasWash),extra_conditioner:Boolean(state.draft.extraConditioner&&calc.hasWash),full_service_discount_total:calc.fullServiceDiscount,addon_total:calc.addonTotal,status:$('#orderStatus').value,payment_method:state.draft.payment==='Unpaid'?null:state.draft.payment,payment_status:state.draft.payment==='Unpaid'?'Unpaid':'Paid',pickup_at:$('#pickupAt').value?new Date($('#pickupAt').value).toISOString():null,notes:$('#orderNotes').value.trim(),subtotal:calc.subtotal,total:calc.total,created_by:state.profile.id};
   const {data,error}=await sb.from('orders').insert(payload).select('id,receipt_no').single();
   $('#saveOrderBtn').disabled=false;
   if(error){setSaveStatus('Save failed','error');toast(error.message);return;}
-  await sb.from('activity_logs').insert({user_id:state.profile.id,action:'create',entity_type:'order',entity_id:data.id,details:{receipt_no:data.receipt_no,total:calc.total,detergent:detergent?.name||'Not required',detergent_price_per_load:calc.detergentPricePerLoad,conditioner:conditioner?.name||'Not required',conditioner_price_per_load:calc.conditionerPricePerLoad,wash_product_total:calc.washProductTotal,add_ons:[state.draft.extraDry?'Extra dry':null,state.draft.extraWash?'Extra wash':null,state.draft.warmHotWash&&calc.hasWash?'Warm / hot wash':null].filter(Boolean)}});
+  await sb.from('activity_logs').insert({user_id:state.profile.id,action:'create',entity_type:'order',entity_id:data.id,details:{receipt_no:data.receipt_no,total:calc.total,detergent:detergent?.name||'Not required',detergent_price_per_load:calc.detergentPricePerLoad,conditioner:conditioner?.name||'Not required',conditioner_price_per_load:calc.conditionerPricePerLoad,wash_product_total:calc.washProductTotal,add_ons:[state.draft.extraDry?'Extra dry':null,state.draft.extraWash?'Extra wash':null,state.draft.warmHotWash&&calc.hasWash?'Warm / hot wash':null,state.draft.extraHandwash?`Extra handwash: ${state.draft.handwashItems}`:null].filter(Boolean)}});
   const { data: savedInventory } = await sb.from('orders').select('inventory_deduction_details').eq('id', data.id).single();
   const inventoryDetails = Array.isArray(savedInventory?.inventory_deduction_details) ? savedInventory.inventory_deduction_details : [];
   const inventoryIssues = inventoryDetails.filter(item => ['not_configured','missing'].includes(String(item?.status || '').toLowerCase()));
@@ -882,17 +968,52 @@ function renderOrders(){
   });
   $('#ordersBody').innerHTML=rows.length?rows.map(o=>{
     const voided=Boolean(o.is_void);
-    const statusCell=voided?`<span class="pill unpaid">VOID</span>`:`<select class="inline-status" data-order-status-id="${o.id}">${['Received','Washing','Drying','Ready','Claimed'].map(x=>`<option ${o.status===x?'selected':''}>${x}</option>`).join('')}</select>`;
+    const statusCell=voided?`<span class="pill unpaid">VOID</span>`:`<select class="inline-status" aria-label="Order status" title="${escapeHtml(o.status||'Select status')}" data-order-status-id="${o.id}">${orderStatuses.map(x=>`<option ${o.status===x?'selected':''}>${x}</option>`).join('')}</select>`;
+    const detailButton=`<button class="btn secondary compact" data-customer-order-details="${o.id}">Customer details</button>`;
+    const nextStatus=nextOrderStatus(o);
+    const deliverySummary=[o.assigned_rider_name?`Rider: ${o.assigned_rider_name}`:'',o.delivery_eta?`ETA: ${formatDateTime(o.delivery_eta)}`:'',o.delivery_received_at?'✓ Customer received':''].filter(Boolean);
     const actions=voided
-      ? `<span class="small">${escapeHtml(o.void_reason||'Voided')}</span>`
-      : `<button data-toggle-paid="${o.id}">${o.payment_status==='Paid'?'Unpay':'Pay'}</button>${o.status==='Ready'?`<button data-notify-rider="${o.id}">📍 On my way</button>`:''}${isAdmin()&&inventoryDeductionNeedsRepair(o)?`<button data-repair-inventory="${o.id}">Repair stock</button>`:''}${isAdmin()?`<button class="danger-action" data-void-order="${o.id}">Void</button>`:''}`;
+      ? `${detailButton}<span class="small">${escapeHtml(o.void_reason||'Voided')}</span>`
+      : `${detailButton}${nextStatus?`<button class="next-status-action" data-next-status="${o.id}" title="Move to ${escapeHtml(nextStatus)}">Next: ${escapeHtml(nextStatus)}</button>`:''}<button class="workflow-action" data-delivery-workflow="${o.id}">🚚 Delivery</button><button data-toggle-paid="${o.id}">${o.payment_status==='Paid'?'Unpay':'Pay'}</button>${['Ready for delivery','Ongoing delivery'].includes(o.status)?`<button data-notify-rider="${o.id}">📍 Notify nearby</button>`:''}${o.last_notification_error?`<button class="notification-failed" data-retry-notification="${o.id}">⚠ Retry alert</button>`:''}${isAdmin()&&inventoryDeductionNeedsRepair(o)?`<button data-repair-inventory="${o.id}">Repair stock</button>`:''}${isAdmin()?`<button class="danger-action" data-void-order="${o.id}">Void</button>`:''}${deliverySummary.length?`<span class="delivery-summary ${o.delivery_received_at?'proof-recorded':''}">${deliverySummary.map(escapeHtml).join('<br>')}</span>`:''}`;
     const includesWash=serviceIncludesWash(o.service_type,o.extra_wash);
     const recordedProductTotal=Number(o.wash_product_total ?? o.wash_product_adjustment) || 0;
     const washProducts=includesWash?`<div class="wash-products-cell"><strong>🧴 ${escapeHtml(o.detergent_name||'Not recorded')} · ${peso.format(Number(o.detergent_price_per_load)||0)}/load</strong><span>🌸 ${escapeHtml(o.conditioner_name||'Not recorded')} · ${peso.format(Number(o.conditioner_price_per_load)||0)}/load</span><span class="price-detail">Products: ${peso.format(recordedProductTotal)}</span></div>`:`<span class="small">Not required</span>`;
-    const optionLabels=orderAddonLabels(o);
-    const optionsCell=optionLabels.length?`<div class="order-options-cell">${optionLabels.map(x=>`<span>${escapeHtml(x)}</span>`).join('')}</div>`:`<span class="small">None</span>`;
+    const linkedRequest=customerRequestForOrder(o)||{};
+    const optionSource={...o,extra_handwash:Boolean(o.extra_handwash||linkedRequest.extra_handwash),handwash_item_count:Number(o.handwash_item_count)||Number(linkedRequest.handwash_item_count)||0,handwash_items:o.handwash_items||linkedRequest.handwash_items||''};
+    const optionLabels=orderAddonLabels(optionSource);
+    const optionsCell=optionLabels.length?`<div class="order-options-cell">${optionLabels.map(x=>`<span class="${String(x).includes('Extra handwash')?'handwash-addon-highlight':''}">${escapeHtml(x)}</span>`).join('')}${optionSource.extra_handwash||optionSource.handwash_items?`<strong class="handwash-items-highlight">${escapeHtml(optionSource.handwash_items||'Handwash items not specified')}</strong>`:''}</div>`:`<span class="small">None</span>`;
     return `<tr class="${voided?'muted-row':''}"><td>${formatDateTime(o.created_at)}</td><td><strong>${escapeHtml(o.receipt_no||'—')}</strong></td><td>${escapeHtml(o.customers?.name||'—')}</td><td>${escapeHtml(o.full_service?'Full Service':serviceLabel(o.service_type))}<span class="cell-sub">${escapeHtml((loadTypes[o.item_type]||loadTypes.assorted_clothes).label)} · ${o.quantity} ${escapeHtml(o.unit||'kg')}</span></td><td>${escapeHtml(places[o.place]?.label||o.place)}</td><td>${optionsCell}</td><td>${washProducts}</td><td>${statusCell}</td><td><span class="pill ${o.payment_status?.toLowerCase()}">${escapeHtml(o.payment_status)}</span></td><td><strong>${peso.format(o.total)}</strong></td><td><div class="row-actions">${actions}</div></td></tr>`;
   }).join(''):'<tr><td colspan="11" class="empty">No orders found.</td></tr>';
+}
+
+function customerRequestForOrder(order){
+  if(!order)return null;
+  return state.requests.find(request=>request.id===order.source_request_id||request.converted_order_id===order.id)||null;
+}
+function detailItem(label,value){
+  const text=String(value??'').trim();
+  return text?`<div class="customer-detail-item"><span>${escapeHtml(label)}</span><strong>${escapeHtml(text)}</strong></div>`:'';
+}
+function openCustomerOrderDetails(orderId){
+  const order=state.orders.find(row=>row.id===orderId);
+  if(!order)return toast('Order details were not found.');
+  const request=customerRequestForOrder(order)||{};
+  const value=(...keys)=>{for(const key of keys){const found=request[key]??order[key];if(found!==null&&found!==undefined&&String(found).trim()!=='')return found;}return'';};
+  const address=[value('building_unit'),value('address_line'),value('barangay'),value('city'),value('landmark')].filter(Boolean).join(', ')||value('full_address');
+  const notes=value('customer_notes','notes','special_instructions','order_notes');
+  const addonNotes=value('extra_handwash_notes','extra_hand_wash_notes','handwash_notes','addon_extra_handwash_notes','addon_notes','add_on_notes','extras_notes');
+  const otherDetails=value('other_details','additional_details','item_description');
+  const photos=[
+    request.pickup_photo_path?['Pickup photo',request.pickup_photo_path]:null,
+    ...(Array.isArray(request.item_photo_paths)?request.item_photo_paths:[]).map((path,index)=>[`Item photo ${index+1}`,path]),
+    request.payment_proof_path?['Payment proof',request.payment_proof_path]:null
+  ].filter(Boolean);
+  const addons=requestAddonLabels({...order,...request});
+  const contact=[detailItem('Customer',value('customer_name')||order.customers?.name),detailItem('Phone',value('phone')||order.customers?.phone),detailItem('Email',value('email')),detailItem('Address',address),detailItem('Pickup schedule',value('pickup_at')),detailItem('Maps link',value('maps_url'))].join('');
+  const instructions=[detailItem('Customer notes',notes),detailItem('Extra handwash items / notes',value('handwash_items')||addonNotes),detailItem('Handwash item count',value('handwash_item_count')),detailItem('Item description / other details',otherDetails),detailItem('Item count',value('item_count')),detailItem('Bags',value('bags_count')),detailItem('Add-ons',addons.join(', '))].join('');
+  $('#customerDetailsTitle').textContent=`${order.receipt_no||'Order'} · ${order.customers?.name||request.customer_name||'Customer'}`;
+  $('#customerDetailsBody').innerHTML=`${contact?`<section class="customer-detail-card"><h3>Contact and pickup</h3><div class="customer-detail-grid">${contact}</div></section>`:''}${instructions?`<section class="customer-detail-card"><h3>Notes and order instructions</h3><div class="customer-detail-grid">${instructions}</div></section>`:''}<section class="customer-detail-card"><h3>Submitted photos</h3><div class="customer-detail-photos">${photos.length?photos.map(([label,path])=>`<button class="btn secondary compact" data-customer-detail-file="${escapeHtml(path)}">${escapeHtml(label)}</button>`).join(''):'<span class="small">No customer photos submitted.</span>'}</div></section>${!contact&&!instructions&&!photos.length?'<div class="customer-detail-empty">No customer-submitted details are linked to this order.</div>':''}`;
+  $('#customerDetailsDialog').showModal();
 }
 async function logAction(action, entityType, entityId = null, details = {}) {
   try {
@@ -917,16 +1038,26 @@ async function updateOrder(id, patch, action = 'update') {
     toast(error.message);
     await loadCloudData().catch(console.error);
     renderAll();
-    return;
+    return false;
   }
   await logAction(action, 'order', id, patch);
+  if (patch.status) {
+    const { data: pushData, error: pushError } = await sb.functions.invoke('push-order-status', {
+      body: { order_id: id, status: patch.status }
+    });
+    const notificationPatch={last_notification_status:pushError?'Failed':Number(pushData?.customer_devices||0)>0?'Sent':'No customer device',last_notification_error:pushError?.message||null,last_notification_at:new Date().toISOString()};
+    const { error: metadataError }=await sb.from('orders').update(notificationPatch).eq('id',id);
+    if (pushError) { console.warn('Customer status notification failed:', pushError.message); toast('Status saved, but the customer alert failed. Use Retry alert.'); }
+    if (metadataError) console.debug('Notification metadata columns are not deployed yet:',metadataError.message);
+  }
   setSaveStatus('Saved in cloud');
   await loadCloudData();
   renderAll();
+  return true;
 }
 
 function requestAddonLabels(request) {
-  return [request.full_service?'Full Service':null, request.extra_dry?'Extra dry':null, request.extra_wash?'Extra wash':null, request.warm_hot_wash?'Warm / hot wash':null, request.zonrox_colorsafe?'Zonrox Color Safe 30 ml':null, request.extra_detergent?'Additional detergent':null, request.extra_conditioner?'Additional fabric conditioner':null].filter(Boolean);
+  return [request.full_service?'Full Service':null, request.extra_dry?'Extra dry':null, request.extra_wash?'Extra wash':null, request.extra_rinse?'Extra rinse':null, request.extra_handwash||request.handwash_items?`🖐 Extra handwash${Number(request.handwash_item_count)>0?` (${Number(request.handwash_item_count)} item${Number(request.handwash_item_count)===1?'':'s'})`:''}`:null, request.warm_hot_wash?'Warm / hot wash':null, request.zonrox_colorsafe?'Zonrox Color Safe 30 ml':null, request.extra_detergent?'Additional detergent':null, request.extra_conditioner?'Additional fabric conditioner':null].filter(Boolean);
 }
 async function openPrivateUpload(path) {
   if (!path) return toast('No photo was uploaded.');
@@ -982,7 +1113,7 @@ function renderRequests(){
       : (r.status !== 'Rejected'
           ? `<button class="btn secondary compact" data-convert-request="${r.id}">Create order</button>`
           : '<span class="cell-sub">Not created</span>');
-    return `<tr><td>${formatDateTime(r.created_at)}</td><td><strong>${escapeHtml(r.request_no)}</strong></td><td><strong>${escapeHtml(r.customer_name)}</strong><span class="cell-sub">${escapeHtml(r.phone)}</span></td><td>${escapeHtml(r.full_service?'Full Service':serviceLabel(r.service_type))}<span class="cell-sub">${escapeHtml(loadLabel)} · ${r.quantity} ${escapeHtml(r.unit)} · ${r.loads} load(s)</span><span class="cell-sub">${products}</span>${options.length?`<span class="cell-sub">${escapeHtml(options.join(', '))}</span>`:''}</td><td><span>${escapeHtml(r.full_address)}</span><span class="cell-sub">${formatDateTime(r.pickup_at)}</span>${mapLink}</td><td><span>${escapeHtml(r.item_description)}</span><div class="row-actions request-files">${itemButtons||'<span class="cell-sub">No photos</span>'}</div></td><td><strong>${escapeHtml(r.payment_reference||'No reference')}</strong><span class="cell-sub">GCash</span></td><td><strong>${peso.format(r.total)}</strong></td><td>${orderCell}</td><td><select data-request-status="${r.id}">${['Pending','Confirmed','Scheduled','Collected','Rejected','Converted'].map(x=>`<option ${r.status===x?'selected':''}>${x}</option>`).join('')}</select></td></tr>`;
+    return `<tr><td>${formatDateTime(r.created_at)}</td><td><strong>${escapeHtml(r.request_no)}</strong></td><td><strong>${escapeHtml(r.customer_name)}</strong><span class="cell-sub">${escapeHtml(r.phone)}</span></td><td>${escapeHtml(r.full_service?'Full Service':serviceLabel(r.service_type))}<span class="cell-sub">${escapeHtml(loadLabel)} · ${r.quantity} ${escapeHtml(r.unit)} · ${r.loads} load(s)</span><span class="cell-sub">${products}</span>${options.length?`<div class="order-options-cell">${options.map(x=>`<span class="${String(x).includes('Extra handwash')?'handwash-addon-highlight':''}">${escapeHtml(x)}</span>`).join('')}</div>`:''}${r.extra_handwash||r.handwash_items?`<strong class="handwash-items-highlight">${escapeHtml(r.handwash_items||'Handwash items not specified')}</strong>`:''}</td><td><span>${escapeHtml(r.full_address)}</span><span class="cell-sub">${formatDateTime(r.pickup_at)}</span>${mapLink}</td><td><span>${escapeHtml(r.item_description)}</span><div class="row-actions request-files">${itemButtons||'<span class="cell-sub">No photos</span>'}</div></td><td><strong>${escapeHtml(r.payment_reference||'No reference')}</strong><span class="cell-sub">GCash</span></td><td><strong>${peso.format(r.total)}</strong></td><td>${orderCell}</td><td><select data-request-status="${r.id}">${['Pending','Confirmed','Scheduled','Collected','Rejected','Converted'].map(x=>`<option ${r.status===x?'selected':''}>${x}</option>`).join('')}</select></td></tr>`;
   }).join(''):'<tr><td colspan="10" class="empty">No customer requests found.</td></tr>';
 }
 
@@ -1043,7 +1174,7 @@ function renderSettings(){const s=state.settings;[
   ['priceWashOnlyCubao','price_wash_only_cubao'],['priceWashOnlyMplace','price_wash_only_mplace'],['capacityWashOnly','capacity_wash_only'],
   ['priceDryOnlyCubao','price_dry_only_cubao'],['priceDryOnlyMplace','price_dry_only_mplace'],['capacityDryOnly','capacity_dry_only'],
   ['priceFoldOnlyCubao','price_fold_only_cubao'],['priceFoldOnlyMplace','price_fold_only_mplace'],['capacityFoldOnly','capacity_fold_only'],
-  ['addonExtraDry','addon_extra_dry'],['addonExtraWash','addon_extra_wash'],['addonWarmHotWash','addon_warm_hot_wash'],['addonZonroxColorsafe','addon_zonrox_colorsafe'],
+  ['addonExtraDry','addon_extra_dry'],['addonExtraWash','addon_extra_wash'],['addonWarmHotWash','addon_warm_hot_wash'],['addonHandwash','addon_handwash'],['addonZonroxColorsafe','addon_zonrox_colorsafe'],
   ['defaultDetergentPrice','default_detergent_price'],['defaultConditionerPrice','default_conditioner_price'],['fullServiceDiscount','full_service_discount'],
   ['deliveryStandard','delivery_standard'],['deliveryMplace','delivery_mplace']
 ].forEach(([id,key])=>{const el=$('#'+id);if(el)el.value=s[key]??0;});syncOutsidePriceFields();
@@ -1089,7 +1220,7 @@ async function autosaveSettings(){if(!isAdmin())return;syncOutsidePriceFields();
   price_wash_only_cubao:washOnlyCubao,price_wash_only_mplace:Number($('#priceWashOnlyMplace').value),price_wash_only_outside:washOnlyCubao,capacity_wash_only:Number($('#capacityWashOnly').value),
   price_dry_only_cubao:dryOnlyCubao,price_dry_only_mplace:Number($('#priceDryOnlyMplace').value),price_dry_only_outside:dryOnlyCubao,capacity_dry_only:Number($('#capacityDryOnly').value),
   price_fold_only_cubao:foldOnlyCubao,price_fold_only_mplace:Number($('#priceFoldOnlyMplace').value),price_fold_only_outside:foldOnlyCubao,capacity_fold_only:Number($('#capacityFoldOnly').value),
-  addon_extra_dry:Number($('#addonExtraDry').value),addon_extra_wash:Number($('#addonExtraWash').value),addon_warm_hot_wash:Number($('#addonWarmHotWash').value),addon_zonrox_colorsafe:Number($('#addonZonroxColorsafe').value),
+  addon_extra_dry:Number($('#addonExtraDry').value),addon_extra_wash:Number($('#addonExtraWash').value),addon_warm_hot_wash:Number($('#addonWarmHotWash').value),addon_handwash:Number($('#addonHandwash').value),addon_zonrox_colorsafe:Number($('#addonZonroxColorsafe').value),
   default_detergent_price:Number($('#defaultDetergentPrice').value),default_conditioner_price:Number($('#defaultConditionerPrice').value),full_service_discount:Number($('#fullServiceDiscount').value),
   delivery_standard:Number($('#deliveryStandard').value),delivery_mplace:Number($('#deliveryMplace').value),
   booking_open_time:$('#bookingOpenTime').value||'07:30',booking_close_time:$('#bookingCloseTime').value||'19:30',
@@ -1116,6 +1247,8 @@ function bindEvents(){
   $('#placeChoices').addEventListener('click',e=>{const b=e.target.closest('[data-place]');if(!b)return;state.draft.place=b.dataset.place;renderPosChoices();});
   $('#deliveryChoices').addEventListener('click',e=>{const b=e.target.closest('[data-delivery]');if(!b)return;state.draft.delivery=b.dataset.delivery==='true';renderPosChoices();});
   $('#addonChoices').addEventListener('click',e=>{const b=e.target.closest('[data-addon]');if(!b||b.disabled)return;const key=b.dataset.addon;state.draft[key]=!state.draft[key];if(key==='extraWash'&&!state.draft.extraWash&&!serviceIncludesWash(state.draft.service,false)){state.draft.warmHotWash=false;state.draft.zonroxColorsafe=false;state.draft.detergentChoice='';state.draft.conditionerChoice='';}renderPosChoices();});
+  $('#staffHandwashCount')?.addEventListener('input',e=>{state.draft.handwashItemCount=Math.min(5,Math.max(1,Number(e.target.value)||1));renderSummary();});
+  $('#staffHandwashItems')?.addEventListener('input',e=>{state.draft.handwashItems=e.target.value;renderSummary();});
   $('#detergentChoices').addEventListener('click',e=>{const b=e.target.closest('[data-detergent-choice]');if(!b||b.disabled)return;state.draft.detergentChoice=b.dataset.detergentChoice;renderPosChoices();});
   $('#conditionerChoices').addEventListener('click',e=>{const b=e.target.closest('[data-conditioner-choice]');if(!b||b.disabled)return;state.draft.conditionerChoice=b.dataset.conditionerChoice;renderPosChoices();});
   $('#paymentChoices').addEventListener('click',e=>{const b=e.target.closest('[data-payment]');if(!b)return;state.draft.payment=b.dataset.payment;renderPosChoices();});
@@ -1138,8 +1271,13 @@ function bindEvents(){
       renderOrders();
     }
   });
-  $('#ordersBody').addEventListener('change',e=>{if(e.target.matches('[data-order-status-id]')){const o=state.orders.find(x=>x.id===e.target.dataset.orderStatusId);if(!o?.is_void)updateOrder(e.target.dataset.orderStatusId,{status:e.target.value},'status_change');}});
-  $('#ordersBody').addEventListener('click',async e=>{const pay=e.target.dataset.togglePaid,voidId=e.target.dataset.voidOrder,repairId=e.target.dataset.repairInventory,notifyId=e.target.dataset.notifyRider;if(notifyId){await notifyRiderApproaching(notifyId,e.target);return;}if(repairId){await repairOrderInventory(repairId);return;}if(pay){const o=state.orders.find(x=>x.id===pay);if(o?.is_void)return;await updateOrder(pay,{payment_status:o.payment_status==='Paid'?'Unpaid':'Paid'},'payment_change');}if(voidId){if(!isAdmin())return toast('Only Admin can void orders.');const reason=prompt('Reason for voiding this order:','Customer cancelled');if(!reason?.trim())return;const ok=await confirmAction('Void order','The order remains in history and cannot be used in sales totals.');if(!ok)return;const patch={is_void:true,void_reason:reason.trim(),voided_at:new Date().toISOString(),voided_by:state.profile.id,updated_by:state.profile.id};const{error}=await sb.from('orders').update(patch).eq('id',voidId);if(error)toast(error.message);else{await logAction('order_voided','order',voidId,{reason:reason.trim()});toast('Order voided');await loadCloudData();renderAll();}}});
+  $('#ordersBody').addEventListener('change',async e=>{if(e.target.matches('[data-order-status-id]')){const o=state.orders.find(x=>x.id===e.target.dataset.orderStatusId);if(!o||o.is_void)return;const next=e.target.value;const movingBack=(statusRank.get(next)??0)<(statusRank.get(o.status)??0);if(movingBack&&!await confirmAction('Move status backwards?',`${o.receipt_no||'This order'} will move from ${o.status} to ${next}.`)){e.target.value=o.status;return;}await updateOrder(o.id,{status:next},'status_change');}});
+  $('#ordersBody').addEventListener('click',async e=>{const details=e.target.closest('[data-customer-order-details]');if(details){openCustomerOrderDetails(details.dataset.customerOrderDetails);return;}const pay=e.target.dataset.togglePaid,voidId=e.target.dataset.voidOrder,repairId=e.target.dataset.repairInventory,notifyId=e.target.dataset.notifyRider,nextId=e.target.dataset.nextStatus,workflowId=e.target.dataset.deliveryWorkflow,retryId=e.target.dataset.retryNotification;if(nextId){const o=state.orders.find(x=>x.id===nextId),next=nextOrderStatus(o);if(next)await updateOrder(nextId,{status:next},'next_status');return;}if(workflowId){await openDeliveryWorkflow(workflowId);return;}if(retryId){await retryOrderNotification(retryId,e.target);return;}if(notifyId){await notifyRiderApproaching(notifyId,e.target);return;}if(repairId){await repairOrderInventory(repairId);return;}if(pay){const o=state.orders.find(x=>x.id===pay);if(o?.is_void)return;await updateOrder(pay,{payment_status:o.payment_status==='Paid'?'Unpaid':'Paid'},'payment_change');}if(voidId){if(!isAdmin())return toast('Only Admin can void orders.');const reason=prompt('Reason for voiding this order:','Customer cancelled');if(!reason?.trim())return;const ok=await confirmAction('Void order','The order remains in history and cannot be used in sales totals.');if(!ok)return;const patch={is_void:true,void_reason:reason.trim(),voided_at:new Date().toISOString(),voided_by:state.profile.id,updated_by:state.profile.id};const{error}=await sb.from('orders').update(patch).eq('id',voidId);if(error)toast(error.message);else{await logAction('order_voided','order',voidId,{reason:reason.trim()});toast('Order voided');await loadCloudData();renderAll();}}});
+  $('#closeCustomerDetailsBtn').addEventListener('click',()=>$('#customerDetailsDialog').close());
+  $('#closeDeliveryWorkflowBtn').addEventListener('click',()=>$('#deliveryWorkflowDialog').close());
+  $('#deliveryWorkflowForm').addEventListener('submit',saveDeliveryWorkflow);
+  $('#retryStatusNotificationBtn').addEventListener('click',()=>retryOrderNotification($('#deliveryWorkflowOrderId').value,$('#retryStatusNotificationBtn')));
+  $('#customerDetailsBody').addEventListener('click',e=>{const file=e.target.closest('[data-customer-detail-file]');if(file)openPrivateUpload(file.dataset.customerDetailFile);});
   $('#customerForm').addEventListener('submit',saveCustomer);$('#clearCustomerBtn').addEventListener('click',clearCustomerForm);
   $('#customersBody').addEventListener('click',async e=>{const edit=e.target.dataset.editCustomer,archive=e.target.dataset.archiveCustomer;if(edit){const c=state.customers.find(x=>x.id===edit);$('#customerId').value=c.id;$('#customerName').value=c.name;$('#customerPhone').value=c.phone||'';$('#customerPlace').value=c.default_place||'cubao';$('#customerNotes').value=c.notes||'';$('#customerFormTitle').textContent='Edit customer';}if(archive){if(!isAdmin())return toast('Only Admin can archive customers.');const c=state.customers.find(x=>x.id===archive);const next=!c.is_archived;const{error}=await sb.from('customers').update({is_archived:next,updated_by:state.profile.id}).eq('id',archive);if(error)toast(error.message);else{await logAction(next?'customer_archived':'customer_restored','customer',archive,{});toast(next?'Customer archived':'Customer restored');await loadCloudData();renderAll();}}});
   $('#inventoryForm').addEventListener('submit',saveInventory);$('#clearInventoryBtn').addEventListener('click',clearInventoryForm);$('#inventoryCategory').addEventListener('change',()=>updateInventoryPriceField(true));

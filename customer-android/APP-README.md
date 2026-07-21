@@ -1,6 +1,6 @@
 # Bubbly-fi Laundry
 
-Android Studio project for `ph.bubblyfi.customer`.
+Android Studio project for `com.bubblyfi.laundry`.
 
 Open this folder in Android Studio and select the `app` run configuration.
 

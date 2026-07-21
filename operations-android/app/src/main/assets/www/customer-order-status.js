@@ -1,9 +1,9 @@
 (() => {
-  if (window.__bubblyfiWebOrdersV1617) return;
-  window.__bubblyfiWebOrdersV1617 = true;
+  if (window.__bubblyfiWebOrdersV1619) return;
+  window.__bubblyfiWebOrdersV1619 = true;
 
   const PHONE_KEY = 'bubblyfi_customer_phone_v1';
-  const STATUS_KEY = 'bubblyfi_customer_web_status_v1617';
+  const STATUS_KEY = 'bubblyfi_customer_web_status_v1619';
   const URL = 'https://amjhrejmcnthlrqddznw.supabase.co';
   const KEY = ['sb','publishable','5KkgIxPlTNAZjqgRX9Yh3A','tqLD2hNE'].join('_');
   const $ = (s, r = document) => r.querySelector(s);
@@ -22,9 +22,11 @@
     const v = norm(`${status || ''} ${message || ''}`);
     if (/cancel|reject|failed/.test(v)) return {key:'cancelled',label:'Cancelled',step:-1,cls:'danger',title:'Order cancelled',body:'This order was cancelled or rejected.'};
     if (/delivered|completed|complete|claimed|received by customer/.test(v)) return {key:'delivered',label:'Delivered',step:8,cls:'done',title:'Laundry delivered',body:'Your laundry has been delivered successfully.'};
+    if (/rider already nearby|rider nearby|delivery staff.*nearby|staff.*nearby/.test(v)) return {key:'nearby',label:'Rider already nearby',step:7,cls:'arrived',title:'Your rider is nearby',body:'The delivery staff is already nearby. Please be ready to receive your laundry.'};
     if (/arrived|at (the )?(address|location|lobby|door)|delivery staff.*here|rider.*here/.test(v)) return {key:'arrived',label:'Arrived',step:7,cls:'arrived',title:'Delivery has arrived',body:'The delivery staff has arrived. Please receive your laundry.'};
     if (/ongoing delivery|delivery ongoing|out for delivery|in transit|delivery started|on delivery|en route.*deliver/.test(v)) return {key:'ongoing',label:'Ongoing delivery',step:6,cls:'rider',title:'Your laundry is on the way',body:'Delivery is ongoing. Please keep your phone available.'};
-    if (/ready for delivery|ready.*pickup|ready/.test(v)) return {key:'ready',label:'Ready',step:5,cls:'ready',title:'Laundry is ready',body:'Your laundry is ready for pickup or delivery.'};
+    if (/ready for delivery/.test(v)) return {key:'ready',label:'Ready for delivery',step:5,cls:'ready',title:'Ready for delivery',body:'Your laundry is ready and waiting for delivery.'};
+    if (/ready.*pickup|ready/.test(v)) return {key:'ready',label:'Ready',step:5,cls:'ready',title:'Laundry is ready',body:'Your laundry is ready for pickup.'};
     if (/processing|washing|wash|drying|folding/.test(v)) return {key:'processing',label:'Processing',step:4,cls:'active',title:'Laundry is being processed',body:'Your laundry is currently being processed.'};
     if (/received at shop|arrived at shop|shop received|laundry received/.test(v)) return {key:'shop',label:'Received at shop',step:3,cls:'active',title:'Laundry received',body:'Bubbly-fi has received your laundry at the shop.'};
     if (/picked up|collected|pickup complete/.test(v)) return {key:'picked',label:'Picked up',step:2,cls:'rider',title:'Laundry picked up',body:'Your laundry has been picked up.'};
@@ -68,7 +70,7 @@
   alertBox.querySelector('button').onclick = () => alertBox.classList.remove('show');
   document.body.appendChild(alertBox);
   function notify(m, ref = '') {
-    if (!['rider','picked','ongoing','arrived','delivered'].includes(m.key)) return;
+    if (!['rider','picked','ongoing','nearby','arrived','delivered'].includes(m.key)) return;
     alertBox.className = `show ${m.cls}`;
     $('strong',alertBox).textContent = m.title;
     $('span',alertBox).textContent = `${ref ? ref + ': ' : ''}${m.body}`;
@@ -102,9 +104,9 @@
     localStorage.setItem(STATUS_KEY,JSON.stringify(next));
     body.innerHTML = orders.length ? orders.map((o,i)=>{
       const n=o.request_no||o.receipt_no||`Order ${i+1}`, m=meta(o.current_status||o.status,o.current_message), opts=options(o);
-      const fields=[['Service',o.service],['Weight',o.weight?`${o.weight} kg`:'' ],['Loads',o.loads],['Address',o.address],['Notes',o.notes||o.customer_notes],['Handwash notes',o.extra_handwash_notes||o.handwash_notes]].filter(x=>x[1]);
+      const fields=[['Service',o.service],['Weight',o.weight?`${o.weight} kg`:'' ],['Loads',o.loads],['Assigned rider',o.assigned_rider_name],['Rider phone',o.assigned_rider_phone],['Delivery ETA',o.delivery_eta?dateText(o.delivery_eta):''],['Delivery proof',o.delivery_received_at?`${o.delivery_proof_type||'Recorded'} · received ${dateText(o.delivery_received_at)}`:''],['Address',o.address],['Notes',o.notes||o.customer_notes],['Handwash notes',o.extra_handwash_notes||o.handwash_notes]].filter(x=>x[1]);
       const progress=m.step<0?'':`<div class="bf-web-progress">${Array.from({length:9},(_,x)=>`<i class="${x<m.step?'on':x===m.step?'now':''}"></i>`).join('')}</div>`;
-      return `<article class="bf-web-card"><div class="bf-web-summary"><div><div class="bf-web-number">${esc(n)}</div><small>${esc(dateText(o.created_at))}</small></div><b>${o.total?`₱${Number(o.total).toLocaleString('en-PH')}`:''}</b><div class="bf-web-status"><span class="bf-web-pill ${m.cls}">${esc(m.label)}</span> <small>${esc(o.current_message||m.body)}</small></div>${['rider','picked','ongoing','arrived','delivered'].includes(m.key)?`<div class="bf-web-banner ${m.cls}"><b>${esc(m.title)}</b><br>${esc(m.body)}</div>${progress}`:''}</div><div class="bf-web-details"><b>Options</b><div>${opts.length?opts.map(x=>`<span class="bf-web-chip ${handwash.test(x)?'handwash':''}">${handwash.test(x)?'🖐️ ':''}${esc(x)}</span>`).join(''):'<small>None specified</small>'}</div>${fields.map(x=>`<div class="bf-web-field"><b>${esc(x[0])}</b>${esc(x[1])}</div>`).join('')}</div></article>`;
+      return `<article class="bf-web-card"><div class="bf-web-summary"><div><div class="bf-web-number">${esc(n)}</div><small>${esc(dateText(o.created_at))}</small></div><b>${o.total?`₱${Number(o.total).toLocaleString('en-PH')}`:''}</b><div class="bf-web-status"><span class="bf-web-pill ${m.cls}">${esc(m.label)}</span> <small>${esc(o.current_message||m.body)}</small></div>${['rider','picked','ongoing','nearby','arrived','delivered'].includes(m.key)?`<div class="bf-web-banner ${m.cls}"><b>${esc(m.title)}</b><br>${esc(m.body)}</div>${progress}`:''}</div><div class="bf-web-details"><b>Options</b><div>${opts.length?opts.map(x=>`<span class="bf-web-chip ${handwash.test(x)?'handwash':''}">${handwash.test(x)?'🖐️ ':''}${esc(x)}</span>`).join(''):'<small>None specified</small>'}</div>${fields.map(x=>`<div class="bf-web-field"><b>${esc(x[0])}</b>${esc(x[1])}</div>`).join('')}</div></article>`;
     }).join('') : '<div class="bf-web-card"><strong>No orders found.</strong><br>Check the phone number used during booking.</div>';
     body.querySelectorAll('.bf-web-summary').forEach(x=>x.onclick=()=>x.closest('.bf-web-card').classList.toggle('open'));
   }

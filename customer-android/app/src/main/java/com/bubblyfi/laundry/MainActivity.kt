@@ -1,4 +1,4 @@
-package ph.bubblyfi.customer
+package com.bubblyfi.laundry
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -34,6 +34,8 @@ import androidx.core.content.ContextCompat
 import androidx.webkit.WebViewAssetLoader
 import com.google.firebase.FirebaseApp
 import com.google.firebase.messaging.FirebaseMessaging
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Locale
 
 class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
@@ -222,7 +224,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun handleIntent(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme == "ph.bubblyfi.customer" && uri.host == "auth-callback") {
+        if (uri.scheme == "com.bubblyfi.laundry" && uri.host == "auth-callback") {
             pendingAuthCallbackUrl = uri.toString()
             flushPendingAuthCallback()
         }
@@ -312,11 +314,59 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             }
             FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
                 val token = if (task.isSuccessful) task.result else null
+                if (!token.isNullOrBlank()) {
+                    getSharedPreferences(BubblyfiMessagingService.PREFS, MODE_PRIVATE).edit()
+                        .putString(BubblyfiMessagingService.KEY_TOKEN, token)
+                        .apply()
+                }
                 runOnUiThread {
                     val jsToken = token?.let { "\"${it.replace("\"", "")}\"" } ?: "null"
-                    webView.evaluateJavascript("window.onFcmToken && window.onFcmToken($jsToken)", null)
+                    webView.evaluateJavascript("window.onFcmToken && window.onFcmToken($jsToken);window.dispatchEvent(new CustomEvent('bubblyfi:fcm-token',{detail:{token:$jsToken}}))", null)
                 }
             }
+        }
+
+        @JavascriptInterface
+        fun firebaseToken(): String = getSharedPreferences(BubblyfiMessagingService.PREFS, MODE_PRIVATE)
+            .getString(BubblyfiMessagingService.KEY_TOKEN, "") ?: ""
+
+        @JavascriptInterface
+        fun customerArea(): String = getSharedPreferences("bubblyfi_customer_native", MODE_PRIVATE)
+            .getString("customer_area", "unknown") ?: "unknown"
+
+        @JavascriptInterface
+        fun setCustomerArea(area: String?) {
+            val clean = area?.trim()?.take(40).orEmpty().ifBlank { "unknown" }
+            getSharedPreferences("bubblyfi_customer_native", MODE_PRIVATE).edit()
+                .putString("customer_area", clean)
+                .apply()
+        }
+
+        @JavascriptInterface
+        fun registeredBookings(): String = getSharedPreferences("bubblyfi_customer_native", MODE_PRIVATE)
+            .getString("registered_bookings", "[]") ?: "[]"
+
+        @JavascriptInterface
+        fun registerBookingDetails(requestId: String?, requestNo: String?, phone: String?, area: String?, json: String?) {
+            val parsed = try { JSONObject(json ?: "{}") } catch (_: Exception) { JSONObject() }
+            parsed.put("request_id", requestId.orEmpty())
+            parsed.put("request_no", requestNo.orEmpty())
+            parsed.put("phone", phone.orEmpty())
+            parsed.put("area", area.orEmpty())
+            val preferences = getSharedPreferences("bubblyfi_customer_native", MODE_PRIVATE)
+            val previous = try { JSONArray(preferences.getString("registered_bookings", "[]")) } catch (_: Exception) { JSONArray() }
+            val merged = JSONArray().put(parsed)
+            for (index in 0 until previous.length()) {
+                if (merged.length() >= 100) break
+                val item = previous.optJSONObject(index) ?: continue
+                val sameId = requestId?.isNotBlank() == true && item.optString("request_id") == requestId
+                val sameNumber = requestNo?.isNotBlank() == true && item.optString("request_no") == requestNo
+                if (!sameId && !sameNumber) merged.put(item)
+            }
+            preferences.edit()
+                .putString("registered_bookings", merged.toString())
+                .putString("customer_area", area?.trim().orEmpty().ifBlank { "unknown" })
+                .apply()
         }
 
         @JavascriptInterface

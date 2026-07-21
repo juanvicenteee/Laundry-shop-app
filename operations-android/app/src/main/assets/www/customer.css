@@ -45,3 +45,9 @@
 .coupon-status{margin:4px 0 0;font-size:.8rem}
 .coupon-status.coupon-valid{color:#1a7a3c}
 .coupon-status.coupon-invalid{color:#b33a3a}
+.loading-card{display:flex;align-items:center;justify-content:center;gap:12px;font-weight:800}
+.loading-card img{width:62px;height:62px;object-fit:contain}
+.auto-load-notice{margin-top:12px;padding:13px 15px;border:2px solid #d79000;border-radius:13px;background:#fff4c7;color:#6a4000;font-weight:900;line-height:1.45}
+.customer-handwash-box{margin:0 0 14px;padding:16px;border:3px solid #efad19;border-radius:16px;background:#fff7d8;box-shadow:0 0 0 4px rgba(239,173,25,.12)}
+.customer-handwash-box>strong{display:block;color:#734700;font-size:17px}
+.customer-handwash-box>p{margin:5px 0 13px;color:#805b13;font-size:13px;line-height:1.45}

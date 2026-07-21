@@ -1,4 +1,4 @@
-package ph.bubblyfi.customer
+package com.bubblyfi.laundry
 
 import android.app.NotificationChannel
 import android.app.NotificationManager

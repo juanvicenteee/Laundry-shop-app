@@ -18,14 +18,20 @@ function statusNotice(status: string): StatusNotice {
   if (/delivered|completed|complete|claimed|received by customer/.test(value)) {
     return { key: 'delivered', title: 'Laundry delivered', body: (reference) => `${reference} has been delivered successfully.`, channel: 'rider', notificationType: 'rider' };
   }
+  if (/rider already nearby|rider nearby|delivery staff.*nearby|staff.*nearby/.test(value)) {
+    return { key: 'rider_nearby', title: 'Your rider is nearby', body: (reference) => `The delivery staff for ${reference} is already nearby. Please be ready to receive your laundry.`, channel: 'rider', notificationType: 'rider' };
+  }
   if (/arrived|at (the )?(address|location|lobby|door)|delivery staff.*here|rider.*here/.test(value)) {
     return { key: 'arrived', title: 'Delivery has arrived', body: (reference) => `The delivery staff has arrived for ${reference}. Please receive your laundry.`, channel: 'rider', notificationType: 'rider' };
   }
   if (/ongoing delivery|delivery ongoing|out for delivery|in transit|delivery started|on delivery|en route.*deliver/.test(value)) {
     return { key: 'ongoing_delivery', title: 'Your laundry is on the way', body: (reference) => `Delivery is ongoing for ${reference}. Please keep your phone available.`, channel: 'rider', notificationType: 'rider' };
   }
-  if (/ready for delivery|ready.*pickup|ready/.test(value)) {
-    return { key: 'ready', title: 'Laundry is ready', body: (reference) => `${reference} is ready for pickup or delivery.`, channel: 'order', notificationType: 'order_status' };
+  if (/ready for delivery/.test(value)) {
+    return { key: 'ready_for_delivery', title: 'Ready for delivery', body: (reference) => `${reference} is ready and waiting for delivery.`, channel: 'order', notificationType: 'order_status' };
+  }
+  if (/ready.*pickup|ready/.test(value)) {
+    return { key: 'ready', title: 'Laundry is ready', body: (reference) => `${reference} is ready for pickup.`, channel: 'order', notificationType: 'order_status' };
   }
   if (/processing|washing|wash|drying|folding|laundry in progress/.test(value)) {
     return { key: 'processing', title: 'Laundry is being processed', body: (reference) => `${reference} is currently being washed, dried, or folded.`, channel: 'order', notificationType: 'order_status' };
@@ -101,7 +107,7 @@ Deno.serve(async (req) => {
     const reference = request?.request_no || order?.receipt_no || 'Your booking';
     const notice = statusNotice(status);
     const tokens = await customerTokens(db, customerUserId, requestId);
-    const dedupeKey = String(input.dedupe_key || `${requestId || order?.id || 'order'}:${normalize(status)}`);
+    const dedupeKey = String(input.dedupe_key || `${requestId || order?.id || 'order'}:${normalize(status)}${input.force_retry ? `:${Date.now()}` : ''}`);
     const commonData = {
       kind: notice.key,
       notification_type: notice.notificationType,
@@ -158,6 +164,16 @@ Deno.serve(async (req) => {
         db.from('device_push_tokens').update({ active: false }).in('token', invalid),
         db.from('customer_device_tokens').update({ enabled: false }).in('fcm_token', invalid),
       ]);
+    }
+
+    if (order?.id) {
+      const deliveredCount = results.filter((result: any) => result.ok).length;
+      const failures = results.filter((result: any) => !result.ok);
+      await db.from('orders').update({
+        last_notification_status: messages.length === 0 ? 'No customer device' : failures.length ? 'Partially failed' : 'Sent',
+        last_notification_error: failures.length ? `${failures.length} of ${results.length} notification attempts failed` : null,
+        last_notification_at: new Date().toISOString(),
+      }).eq('id', order.id);
     }
 
     return json({

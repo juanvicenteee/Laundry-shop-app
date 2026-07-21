@@ -1,0 +1,75 @@
+name: Apply Delivery and OAuth Fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'operations-android/app/src/main/assets/www/delivery-status-fix.js'
+      - 'operations-android/app/src/main/assets/www/customer-auth-fix.js'
+      - 'operations-android/app/src/main/assets/www/auth-callback.html'
+      - '.github/workflows/apply-delivery-oauth-fixes.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch Operations and Customer HTML
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def add_script(path, src):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if src in text:
+                  return
+              tag = f'  <script src="{src}" data-cfasync="false"></script>\n'
+              if '</body>' not in text:
+                  raise SystemExit(f'Missing </body> in {path}')
+              p.write_text(text.replace('</body>', tag + '</body>', 1), encoding='utf-8')
+
+          add_script('operations-android/app/src/main/assets/www/index.html', 'delivery-status-fix.js?v=1.0.0')
+          add_script('operations-android/app/src/main/assets/www/customer.html', 'customer-auth-fix.js?v=1.0.0')
+
+          customer_index = Path('customer-android/app/src/main/assets/www/index.html')
+          if customer_index.exists():
+              add_script(customer_index, 'customer-auth-fix.js?v=1.0.0')
+
+          source = Path('operations-android/app/src/main/assets/www')
+          customer_www = Path('customer-android/app/src/main/assets/www')
+          if customer_www.exists():
+              for name in ['customer-auth-fix.js', 'auth-callback.html']:
+                  (customer_www / name).write_text((source / name).read_text(encoding='utf-8'), encoding='utf-8')
+          PY
+      - name: Validate JavaScript and callback
+        run: |
+          set -euo pipefail
+          node --check operations-android/app/src/main/assets/www/delivery-status-fix.js
+          node --check operations-android/app/src/main/assets/www/customer-auth-fix.js
+          grep -q 'delivery-status-fix.js' operations-android/app/src/main/assets/www/index.html
+          grep -q 'customer-auth-fix.js' operations-android/app/src/main/assets/www/customer.html
+          grep -q 'ph.bubblyfi.customer://auth-callback' operations-android/app/src/main/assets/www/auth-callback.html
+      - name: Commit generated HTML updates
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add operations-android/app/src/main/assets/www/index.html \
+                  operations-android/app/src/main/assets/www/customer.html \
+                  customer-android/app/src/main/assets/www/index.html \
+                  customer-android/app/src/main/assets/www/customer-auth-fix.js \
+                  customer-android/app/src/main/assets/www/auth-callback.html || true
+          if git diff --cached --quiet; then
+            echo 'No generated changes.'
+            exit 0
+          fi
+          git commit -m 'Apply delivery status and OAuth fixes [skip ci]'
+          git push

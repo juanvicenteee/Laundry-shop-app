@@ -21,14 +21,14 @@ if (hasGoogleServices) {
 
 android {
     namespace = "com.bubblyfi.laundry"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.bubblyfi.laundry"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 1031
-        versionName = "1.6.20"
+        targetSdk = 36
+        versionCode = 1033
+        versionName = "1.6.21"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

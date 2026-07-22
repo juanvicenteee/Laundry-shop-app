@@ -1,4 +1,5 @@
 name: Build Android customer app
+# Android 16 / API 36 release build
 
 on:
   workflow_dispatch:

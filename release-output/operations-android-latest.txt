@@ -1,4 +1,4 @@
-run_id=29842611420
-artifact_id=8500011513
+run_id=29918564365
+artifact_id=8528951269
 artifact_name=operations-android-builds
-commit=cadb1e01aeda01f333acb9e9167e6706cdea466f
+commit=f37e9d4cc634eb55b593fe691a62dd0b887cb6c8

@@ -21,14 +21,14 @@ if (hasGoogleServices) {
 
 android {
     namespace = "ph.bubblyfi.operations"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ph.bubblyfi.operations"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 25
-        versionName = "2.0.5"
+        targetSdk = 36
+        versionCode = 26
+        versionName = "2.0.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

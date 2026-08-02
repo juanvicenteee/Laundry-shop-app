@@ -2,6 +2,7 @@
 
 const SUPABASE_URL = 'https://amjhrejmcnthlrqddznw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_5KkgIxPlTNAZjqgRX9Yh3A_tqLD2hNE';
+const AUTH_REDIRECT_URL = 'bubblyfi://auth-callback';
 const SHOP_ADDRESS = '92 14th Ave, Cubao, Quezon City, Philippines, 1109';
 const LALAMOVE_WEB_URL = 'https://web.lalamove.com/';
 // Business service geofences. Tightest radius wins. Defaults here are a
@@ -361,15 +362,17 @@ function validateBooking() {
   return true;
 }
 
-async function signInWithProvider(provider) {
+async function signInWithGoogle() {
+  const button = $('#authGoogle');
   try {
-    toast(`Opening ${provider === 'google' ? 'Google' : 'Facebook'} sign-in…`);
+    if (button) button.disabled = true;
+    toast('Opening Google sign-in…');
     const { data, error } = await sb.auth.signInWithOAuth({
-      provider,
+      provider: 'google',
       options: {
-        redirectTo: 'com.bubblyfi.laundry://auth-callback',
+        redirectTo: AUTH_REDIRECT_URL,
         skipBrowserRedirect: true,
-        queryParams: provider === 'google' ? { access_type: 'offline', prompt: 'select_account' } : undefined
+        queryParams: { access_type: 'offline', prompt: 'select_account' }
       }
     });
     if (error) throw error;
@@ -379,6 +382,8 @@ async function signInWithProvider(provider) {
     }
   } catch (error) {
     toast(error.message || 'Could not start sign-in.');
+  } finally {
+    if (button) button.disabled = false;
   }
 }
 window.onAuthCallback = async url => {
@@ -400,6 +405,9 @@ window.onAuthCallback = async url => {
     toast('Signed in!');
   } catch (error) {
     toast(error.message || 'Sign-in did not complete.');
+  } finally {
+    const button = $('#authGoogle');
+    if (button) button.disabled = false;
   }
 };
 async function refreshAuthUi() {
@@ -804,8 +812,7 @@ function bindEvents() {
   });
   $('#bookingForm').addEventListener('submit', submitBooking);
   $('#newBooking').addEventListener('click', () => location.reload());
-  $('#authGoogle')?.addEventListener('click', () => signInWithProvider('google'));
-  $('#authFacebook')?.addEventListener('click', () => signInWithProvider('facebook'));
+  $('#authGoogle')?.addEventListener('click', signInWithGoogle);
   $('#authSignOut')?.addEventListener('click', async () => { await sb.auth.signOut(); await refreshAuthUi(); toast('Signed out.'); });
   $('#toggleAddresses')?.addEventListener('click', () => { $('#preferencesPanel').classList.add('hidden'); $('#addressesPanel').classList.toggle('hidden'); });
   $('#togglePreferences')?.addEventListener('click', () => { $('#addressesPanel').classList.add('hidden'); $('#preferencesPanel').classList.toggle('hidden'); });

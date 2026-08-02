@@ -32,7 +32,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleDebug :app:bundleRelease --stacktrace 2>&1 | tee ../customer-build.log
+          gradle :app:assembleDebug :app:assembleRelease :app:bundleRelease --stacktrace 2>&1 | tee ../customer-build.log
       - id: upload
         if: steps.compile.outcome == 'success'
         uses: actions/upload-artifact@v4
@@ -40,6 +40,7 @@ jobs:
           name: customer-android-builds
           path: |
             customer-android/app/build/outputs/apk/debug/*.apk
+            customer-android/app/build/outputs/apk/release/*.apk
             customer-android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
       - name: Record build result

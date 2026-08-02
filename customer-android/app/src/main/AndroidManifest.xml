@@ -28,9 +28,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- OAuth redirect target (Google/Facebook sign-in). singleTask above
-                 ensures this reuses the existing WebView instance via onNewIntent()
-                 instead of reloading the whole app and losing in-progress state. -->
+            <!-- Primary Google OAuth redirect. Use a short, app-specific scheme so
+                 the browser can hand the completed sign-in back to Bubbly-fi. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="bubblyfi" android:host="auth-callback" />
+            </intent-filter>
+            <!-- Accept callbacks started by Customer 1.6.21 and older while an
+                 OAuth browser tab is still open during the app update. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

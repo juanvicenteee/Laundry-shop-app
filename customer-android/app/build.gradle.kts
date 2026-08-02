@@ -27,8 +27,8 @@ android {
         applicationId = "com.bubblyfi.laundry"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1033
-        versionName = "1.6.21"
+        versionCode = 1034
+        versionName = "1.6.22"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

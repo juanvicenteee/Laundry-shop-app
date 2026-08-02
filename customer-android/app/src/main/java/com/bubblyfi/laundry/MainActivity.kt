@@ -47,6 +47,8 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
     private var textToSpeech: TextToSpeech? = null
     private var ttsReady = false
+    private var webAppReady = false
+    private val authCallbackSchemes = setOf("bubblyfi", "com.bubblyfi.laundry")
 
     private val filePicker = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -137,6 +139,7 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
                 progressBar.visibility = View.GONE
+                webAppReady = url.startsWith("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/www/")
                 flushPendingAuthCallback()
             }
         }
@@ -210,10 +213,10 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
         if (savedInstanceState == null) {
             webView.loadUrl("https://${WebViewAssetLoader.DEFAULT_DOMAIN}/assets/www/index.html")
-            handleIntent(intent)
         } else {
             webView.restoreState(savedInstanceState)
         }
+        handleIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -224,17 +227,29 @@ class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
 
     private fun handleIntent(intent: Intent?) {
         val uri = intent?.data ?: return
-        if (uri.scheme == "com.bubblyfi.laundry" && uri.host == "auth-callback") {
+        val supportedScheme = uri.scheme?.lowercase(Locale.ROOT) in authCallbackSchemes
+        if (supportedScheme && uri.host.equals("auth-callback", ignoreCase = true)) {
             pendingAuthCallbackUrl = uri.toString()
             flushPendingAuthCallback()
         }
     }
 
     private fun flushPendingAuthCallback() {
+        if (!webAppReady) return
         val url = pendingAuthCallbackUrl ?: return
         val escaped = url.replace("\\", "\\\\").replace("'", "\\'")
-        webView.evaluateJavascript("window.onAuthCallback && window.onAuthCallback('$escaped')", null)
-        pendingAuthCallbackUrl = null
+        val script = """
+            (function() {
+                if (typeof window.onAuthCallback !== 'function') return false;
+                window.onAuthCallback('$escaped');
+                return true;
+            })()
+        """.trimIndent()
+        webView.evaluateJavascript(script) { delivered ->
+            if (delivered == "true" && pendingAuthCallbackUrl == url) {
+                pendingAuthCallbackUrl = null
+            }
+        }
     }
 
     private fun openExternal(uri: Uri): Boolean {

@@ -230,7 +230,7 @@
         await rpc('register_customer_phone_device', {
           p_phone: phone,
           p_fcm_token: token,
-          p_app_version: native('versionName', '1.6.20'),
+          p_app_version: native('versionName', '1.6.22'),
           p_area: native('customerArea', 'unknown')
         });
         notificationsRegistered = true;

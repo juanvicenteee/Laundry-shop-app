@@ -1,0 +1,4 @@
+run_id=30748082433
+artifact_id=8833540633
+artifact_name=customer-android-builds
+commit=6178b6a1a95b66cdda666cb83b756f52057b23ce

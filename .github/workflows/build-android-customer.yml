@@ -63,7 +63,7 @@ jobs:
           fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add release-output/customer-android-latest.txt release-output/customer-android-failure.log 2>/dev/null || true
+          git add -A release-output
           git commit -m 'Record Customer Android build result [skip ci]' || true
           git push
       - name: Enforce successful build
